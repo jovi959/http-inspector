@@ -5,6 +5,7 @@ import { getInlineText } from "@/domain/body-presentation/bodyRendererRegistry";
 import { createDataverseResponseRecords, renderDataverseClassDiagram } from "@/domain/dataverse/dataverseMap";
 import type { DataverseMap } from "@/domain/dataverse/dataverseMap";
 import { useCapturedBody } from "@/features/inspector/body/useCapturedBody";
+import { decorateDataverseDiagramValues } from "@/features/inspector/dataverse/decorateDataverseDiagramValues";
 import type { ExchangeKey, HttpBody } from "@/generated/contracts";
 import { useCaptureStore } from "@/state/capture/captureStore";
 
@@ -66,6 +67,8 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
         const { svg } = await mermaid.render(`dataverse-map-${diagramId}`, source);
         if (!disposed && diagramContainer.current) {
           diagramContainer.current.innerHTML = svg;
+          const renderedDiagram = diagramContainer.current.querySelector("svg");
+          if (renderedDiagram) decorateDataverseDiagramValues(renderedDiagram);
           setDiagramRevision((current) => current + 1);
           setRenderError(null);
         }

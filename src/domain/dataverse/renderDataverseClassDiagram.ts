@@ -1,4 +1,5 @@
 import type { DataverseExpansion, DataverseFilter, DataverseMap, DataverseRecord, DataverseRecordValue } from "@/domain/dataverse/dataverseMapTypes";
+import { createDataverseRecordValuePresentation } from "@/domain/dataverse/dataverseRecordValuePresentation";
 
 interface ExpansionNode {
   readonly expansion: DataverseExpansion;
@@ -114,26 +115,12 @@ function getExpansionRecord(parentRecord: DataverseRecord | null, relationship: 
 }
 
 function renderMember(column: string, record: DataverseRecord | null): string {
-  if (!record) return column;
-  return `${column} = ${formatRecordValue(record[column])}`;
-}
-
-function formatRecordValue(value: DataverseRecordValue | undefined): string {
-  if (value === undefined) return "not returned";
-  if (value === null) return "null";
-  if (typeof value === "string") return truncate(value.replaceAll(/\s+/g, " ").trim());
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return `${value.length} related record${value.length === 1 ? "" : "s"}`;
-  return "related record";
+  if (!record) return escapeLabel(column);
+  return `${escapeLabel(column)} = ${escapeLabel(createDataverseRecordValuePresentation(record[column]).text)}`;
 }
 
 function isDataverseRecord(value: DataverseRecordValue | undefined): value is DataverseRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function truncate(value: string): string {
-  const limit = 72;
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
 }
 
 function alphabeticSuffix(index: number): string {

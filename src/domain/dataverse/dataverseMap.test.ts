@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 import { createDataverseMap, createDataverseResponseRecords, isDataverseRequest, renderDataverseClassDiagram } from "./dataverseMap";
+import { getDataverseDiagramValueKind } from "./dataverseDiagramValueStyle";
+import { createDataverseRecordValuePresentation } from "./dataverseRecordValuePresentation";
 
 const requestUrl = readFixture("odata-incidents.url");
 const actionRequestUrl = readFixture("odata-incidents-action-request.url");
@@ -81,10 +83,36 @@ describe("Dataverse Map", () => {
     const map = createDataverseMap({ method: "GET", url: requestUrl });
 
     expect(response).toMatchObject({ records: [expect.objectContaining({ field_title: "First incident" })], error: null });
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_title = First incident");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = Northwind");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_schedule_id = work-1");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = Construction");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_title = &quot;First incident&quot;");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_category = 1001");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Northwind&quot;");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_schedule_id = &quot;work-1&quot;");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Construction&quot;");
+  });
+
+  test("presents captured JSON values with their original JSON type", () => {
+    const typeDiagram = renderDataverseClassDiagram({
+      requestLabel: "GET /saas/d365/v9.2/sample_records",
+      entityName: "sample_records",
+      selectedColumns: ["field_text", "field_number", "field_boolean", "field_null"],
+      filters: [],
+      expansions: [],
+    }, { field_text: "North incident", field_number: 1001, field_boolean: true, field_null: null });
+
+    expect(createDataverseRecordValuePresentation("North incident")).toEqual({ kind: "string", text: '"North incident"' });
+    expect(createDataverseRecordValuePresentation(1001)).toEqual({ kind: "number", text: "1001" });
+    expect(createDataverseRecordValuePresentation(true)).toEqual({ kind: "boolean", text: "true" });
+    expect(createDataverseRecordValuePresentation(null)).toEqual({ kind: "null", text: "null" });
+    expect(createDataverseRecordValuePresentation(undefined)).toEqual({ kind: "unavailable", text: "not returned" });
+    expect(typeDiagram).toContain("        field_text = &quot;North incident&quot;");
+    expect(typeDiagram).toContain("        field_number = 1001");
+    expect(typeDiagram).toContain("        field_boolean = true");
+    expect(typeDiagram).toContain("        field_null = null");
+    expect(getDataverseDiagramValueKind('"1001"')).toBe("string");
+    expect(getDataverseDiagramValueKind("1001")).toBe("number");
+    expect(getDataverseDiagramValueKind("true")).toBe("boolean");
+    expect(getDataverseDiagramValueKind("null")).toBe("null");
+    expect(getDataverseDiagramValueKind("not returned")).toBeNull();
   });
 
   test("reports malformed and non-collection Dataverse response content without inventing records", () => {
