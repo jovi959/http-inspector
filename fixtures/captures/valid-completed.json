@@ -1,0 +1,46 @@
+{
+  "schemaVersion": { "major": 1, "minor": 0 },
+  "id": "11111111-2222-4333-8444-55555555f001",
+  "sessionId": "11111111-2222-4333-8444-55555555a001",
+  "revision": 2,
+  "arrivalSequence": 1,
+  "source": {
+    "instanceId": "11111111-2222-4333-8444-55555555b001",
+    "applicationName": "Sample Mobile",
+    "serviceName": "sample-mobile",
+    "platform": "flutter",
+    "adapterName": "dio-capture",
+    "adapterVersion": "0.1.0",
+    "protocolVersion": { "major": 1, "minor": 0 },
+    "environment": "development",
+    "deviceName": "iPhone simulator",
+    "processId": 1234,
+    "buildVersion": "42",
+    "baseUrl": "https://api.example.test",
+    "metadata": { "flutter.isolate": "main" }
+  },
+  "correlation": { "traceId": "trace-fixture-001", "spanId": "span-fixture-001", "parentSpanId": null, "operationId": "document-search", "parentExchangeId": null },
+  "lifecycle": { "state": "completed", "startedAt": "2026-08-13T20:39:49.000Z", "receivedAt": "2026-08-13T20:39:49.001Z", "lastUpdatedAt": "2026-08-13T20:39:49.041Z" },
+  "request": {
+    "method": "POST", "originalMethod": "post", "url": "https://api.example.test/v1/documents/search?region=ca&region=on&includeClosed", "scheme": "https", "host": "api.example.test", "port": null,
+    "path": "/v1/documents/search", "pathSegments": ["v1", "documents", "search"], "fragment": null,
+    "query": [{ "name": "region", "value": "ca", "provenance": "exact" }, { "name": "region", "value": "on", "provenance": "exact" }, { "name": "includeClosed", "value": null, "provenance": "exact" }],
+    "protocol": "HTTP/2",
+    "headers": [{ "name": "Content-Type", "value": "application/json", "provenance": "exact" }, { "name": "Authorization", "value": "Bearer fixture-token", "provenance": "exact" }, { "name": "X-Trace", "value": "one", "provenance": "exact" }, { "name": "X-Trace", "value": "two", "provenance": "exact" }],
+    "body": { "availability": "captured", "mediaType": "application/json", "charset": "utf-8", "contentEncoding": null, "declaredByteLength": 56, "observedByteLength": 56, "capturedByteLength": 56, "sha256": null, "content": { "kind": "inlineText", "value": "{\"searchType\":\"IDNumber\",\"includeClosed\":false,\"page\":1}" }, "truncationReason": null },
+    "raw": null, "remoteAddress": { "value": "203.0.113.10:443", "provenance": "adapterReported" }, "localAddress": null
+  },
+  "response": {
+    "statusCode": 200, "reasonPhrase": "OK", "protocol": "HTTP/2",
+    "headers": [{ "name": "Content-Type", "value": "application/json; charset=utf-8", "provenance": "exact" }, { "name": "Set-Cookie", "value": "session=fixture-a", "provenance": "exact" }, { "name": "Set-Cookie", "value": "theme=dark", "provenance": "exact" }],
+    "body": { "availability": "captured", "mediaType": "application/json", "charset": "utf-8", "contentEncoding": null, "declaredByteLength": 51, "observedByteLength": 51, "capturedByteLength": 51, "sha256": null, "content": { "kind": "inlineText", "value": "{\"items\":[{\"id\":42,\"active\":true}],\"nextPage\":null}" }, "truncationReason": null },
+    "raw": null
+  },
+  "timing": { "requestHeadersSentMs": 1, "requestBodyFinishedMs": 2, "responseHeadersReceivedMs": 35, "responseBodyFinishedMs": 40, "exchangeEndedMs": 40, "dns": { "milliseconds": null, "provenance": "unavailable" }, "connect": { "milliseconds": null, "provenance": "unavailable" }, "tls": { "milliseconds": null, "provenance": "unavailable" }, "queue": { "milliseconds": 0, "provenance": "measured" }, "requestWrite": { "milliseconds": 1, "provenance": "measured" }, "serverWait": { "milliseconds": 33, "provenance": "measured" }, "responseRead": { "milliseconds": 5, "provenance": "measured" }, "total": { "milliseconds": 40, "provenance": "measured" } },
+  "sizes": { "requestHeaders": { "bytes": 185, "provenance": "exact" }, "requestBody": { "bytes": 56, "provenance": "exact" }, "responseHeaders": { "bytes": 216, "provenance": "exact" }, "responseBody": { "bytes": 51, "provenance": "exact" }, "total": { "bytes": 508, "provenance": "exact" } },
+  "transport": { "tls.version": "TLSv1.3", "connection.reused": true },
+  "failure": null,
+  "capture": { "requestHeaders": "exact", "responseHeaders": "exact", "requestBody": "exact", "responseBody": "exact", "timing": "measured", "sizes": "exact", "requestRaw": "unavailable", "responseRaw": "unavailable" },
+  "tags": ["search", "fixture"],
+  "metadata": { "application.userAction": "search documents", "adapter.retryCount": 0 }
+}

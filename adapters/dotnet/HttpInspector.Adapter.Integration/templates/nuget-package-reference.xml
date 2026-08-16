@@ -1,0 +1,8 @@
+  <!-- HTTP_INSPECTOR_INJECTION:{{RUN_ID}}:BEGIN -->
+  <PropertyGroup>
+    <RestoreAdditionalProjectSources>$(RestoreAdditionalProjectSources);{{PACKAGE_FEED}}</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="{{PACKAGE_ID}}" Version="{{PACKAGE_VERSION}}" PrivateAssets="all" />
+  </ItemGroup>
+  <!-- HTTP_INSPECTOR_INJECTION:{{RUN_ID}}:END -->

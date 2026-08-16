@@ -1,0 +1,18 @@
+{
+  "id": "fixture-invalid-status",
+  "source": "fixture",
+  "state": "completed",
+  "request": {
+    "method": "GET",
+    "url": "https://api.example.test/invalid",
+    "headers": [],
+    "body": { "contentType": null, "state": { "kind": "pending" }, "truncated": false }
+  },
+  "response": {
+    "statusCode": 700,
+    "headers": [],
+    "body": { "contentType": null, "state": { "kind": "pending" }, "truncated": false }
+  },
+  "timing": { "startedAt": "2026-08-13T20:40:11.000Z", "durationMs": 1 },
+  "metadata": {}
+}

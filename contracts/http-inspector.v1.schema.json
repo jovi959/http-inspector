@@ -1,0 +1,1670 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HttpInspectorContract",
+  "description": "Root wrapper keeps every public v1 exchange and protocol definition in one JSON Schema artifact.",
+  "type": "object",
+  "properties": {
+    "capture_message": {
+      "$ref": "#/$defs/CaptureMessage"
+    },
+    "client_hello": {
+      "$ref": "#/$defs/ClientHello"
+    },
+    "exchange": {
+      "$ref": "#/$defs/HttpExchange"
+    },
+    "server_message": {
+      "$ref": "#/$defs/ServerMessage"
+    },
+    "ui_delta": {
+      "$ref": "#/$defs/CaptureUiDelta"
+    }
+  },
+  "required": [
+    "exchange",
+    "client_hello",
+    "capture_message",
+    "server_message",
+    "ui_delta"
+  ],
+  "$defs": {
+    "AddressDetails": {
+      "description": "Captures one endpoint and its origin without fabricating network resolution details.",
+      "type": "object",
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "provenance"
+      ]
+    },
+    "BodyAvailability": {
+      "description": "Describes body availability before choosing where captured bytes are stored.",
+      "type": "string",
+      "enum": [
+        "notApplicable",
+        "pending",
+        "captured",
+        "empty",
+        "omitted",
+        "truncated",
+        "unavailable"
+      ]
+    },
+    "BodyContent": {
+      "description": "Body storage is opaque to the webview when content is retained outside the inline envelope.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "inlineText"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "inlineBase64"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "attachmentId": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "attachmentRef"
+            }
+          },
+          "required": [
+            "kind",
+            "attachmentId"
+          ]
+        }
+      ]
+    },
+    "ByteCount": {
+      "description": "A byte count follows the same explicit known/unknown rule as duration values.",
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "provenance": {
+          "$ref": "#/$defs/CaptureProvenance"
+        }
+      },
+      "required": [
+        "provenance"
+      ]
+    },
+    "CaptureFidelity": {
+      "description": "Every independently captured area advertises fidelity so Raw and Overview remain honest.",
+      "type": "object",
+      "properties": {
+        "requestBody": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "requestHeaders": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "requestRaw": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "responseBody": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "responseHeaders": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "responseRaw": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "sizes": {
+          "$ref": "#/$defs/CaptureProvenance"
+        },
+        "timing": {
+          "$ref": "#/$defs/CaptureProvenance"
+        }
+      },
+      "required": [
+        "requestHeaders",
+        "responseHeaders",
+        "requestBody",
+        "responseBody",
+        "timing",
+        "sizes",
+        "requestRaw",
+        "responseRaw"
+      ]
+    },
+    "CaptureMessage": {
+      "description": "Lifecycle payloads accepted after a completed handshake.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "correlation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CorrelationContext"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exchangeId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "metadata": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "request": {
+              "$ref": "#/$defs/HttpRequest"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timing": {
+              "$ref": "#/$defs/ExchangeTiming"
+            },
+            "type": {
+              "type": "string",
+              "const": "exchange.started"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "exchangeId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "request",
+            "timing",
+            "tags",
+            "metadata"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "capture": {
+              "$ref": "#/$defs/CaptureFidelity"
+            },
+            "exchangeId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "metadataPatch": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
+            },
+            "response": {
+              "$ref": "#/$defs/HttpResponse"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sizes": {
+              "$ref": "#/$defs/ExchangeSizes"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "timing": {
+              "$ref": "#/$defs/ExchangeTiming"
+            },
+            "type": {
+              "type": "string",
+              "const": "exchange.completed"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "exchangeId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "response",
+            "timing",
+            "sizes",
+            "capture"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "capture": {
+              "$ref": "#/$defs/CaptureFidelity"
+            },
+            "exchangeId": {
+              "type": "string"
+            },
+            "failure": {
+              "$ref": "#/$defs/ExchangeFailure"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "metadataPatch": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
+            },
+            "response": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HttpResponse"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sizes": {
+              "$ref": "#/$defs/ExchangeSizes"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "timing": {
+              "$ref": "#/$defs/ExchangeTiming"
+            },
+            "type": {
+              "type": "string",
+              "const": "exchange.failed"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "exchangeId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "failure",
+            "timing",
+            "sizes",
+            "capture"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "capture": {
+              "$ref": "#/$defs/CaptureFidelity"
+            },
+            "exchangeId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sizes": {
+              "$ref": "#/$defs/ExchangeSizes"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "timing": {
+              "$ref": "#/$defs/ExchangeTiming"
+            },
+            "type": {
+              "type": "string",
+              "const": "exchange.cancelled"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "exchangeId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "origin",
+            "timing",
+            "sizes",
+            "capture"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "exchange": {
+              "$ref": "#/$defs/HttpExchange"
+            },
+            "exchangeId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "exchange.snapshot"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "exchangeId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "exchange"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "droppedCount": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "queuedCount": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "heartbeat"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "sourceInstanceId",
+            "sentAt",
+            "queuedCount",
+            "droppedCount"
+          ]
+        }
+      ]
+    },
+    "CaptureProvenance": {
+      "description": "Identifies how a value was observed without claiming unavailable proxy-level data.",
+      "type": "string",
+      "enum": [
+        "exact",
+        "adapterReported",
+        "measured",
+        "derived",
+        "reconstructed",
+        "truncated",
+        "unavailable"
+      ]
+    },
+    "CaptureSource": {
+      "description": "Identifies the adapter process that emitted an exchange.",
+      "type": "object",
+      "properties": {
+        "adapterName": {
+          "type": "string"
+        },
+        "adapterVersion": {
+          "type": "string"
+        },
+        "applicationName": {
+          "type": "string"
+        },
+        "baseUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "buildVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deviceName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "environment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "platform": {
+          "type": "string"
+        },
+        "processId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "protocolVersion": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "serviceName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instanceId",
+        "applicationName",
+        "serviceName",
+        "platform",
+        "adapterName",
+        "adapterVersion",
+        "protocolVersion",
+        "metadata"
+      ]
+    },
+    "CaptureUiDelta": {
+      "description": "Batches can be safely applied by any UI adapter without sending full captured bodies hot-path.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "upsert"
+            },
+            "summary": {
+              "$ref": "#/$defs/HttpExchangeSummary"
+            }
+          },
+          "required": [
+            "kind",
+            "summary"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/ExchangeKey"
+            },
+            "kind": {
+              "type": "string",
+              "const": "remove"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reset"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "summaries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HttpExchangeSummary"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "sessionId",
+            "summaries"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "connectedSources": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "droppedCount": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "status"
+            },
+            "recording": {
+              "type": "boolean"
+            },
+            "rejectedCount": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "recording",
+            "connectedSources",
+            "droppedCount",
+            "rejectedCount"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/ExchangeKey"
+            },
+            "kind": {
+              "type": "string",
+              "const": "detailInvalidated"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "revision"
+          ]
+        }
+      ]
+    },
+    "ClientHello": {
+      "description": "The required first message from an adapter before capture telemetry is accepted.",
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "source": {
+          "$ref": "#/$defs/CaptureSource"
+        },
+        "supportedProtocol": {
+          "$ref": "#/$defs/ProtocolRange"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "supportedProtocol",
+        "source"
+      ]
+    },
+    "CorrelationContext": {
+      "description": "Stable tracing fields are modelled now even though the first UI only displays them.",
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parentExchangeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parentSpanId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "spanId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "traceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "DurationValue": {
+      "description": "A duration is present only when known; provenance explains its source instead of using zero.",
+      "type": "object",
+      "properties": {
+        "milliseconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "provenance": {
+          "$ref": "#/$defs/CaptureProvenance"
+        }
+      },
+      "required": [
+        "provenance"
+      ]
+    },
+    "ExchangeFailure": {
+      "description": "Failure describes capture or transport failures, not ordinary 4xx and 5xx HTTP responses.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/ExchangeFailureCategory"
+        },
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "message",
+        "retryable"
+      ]
+    },
+    "ExchangeFailureCategory": {
+      "type": "string",
+      "enum": [
+        "transport",
+        "serialization",
+        "interceptor",
+        "connection",
+        "timeout",
+        "cancelled",
+        "capture"
+      ]
+    },
+    "ExchangeKey": {
+      "description": "The pair prevents different monitored processes from colliding on an adapter exchange ID.",
+      "type": "object",
+      "properties": {
+        "exchangeId": {
+          "type": "string"
+        },
+        "sourceInstanceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceInstanceId",
+        "exchangeId"
+      ]
+    },
+    "ExchangeLifecycle": {
+      "description": "Lifecycle semantics are independent from HTTP response status classes.",
+      "type": "object",
+      "properties": {
+        "lastUpdatedAt": {
+          "type": "string"
+        },
+        "receivedAt": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ExchangeState"
+        }
+      },
+      "required": [
+        "state",
+        "startedAt",
+        "receivedAt",
+        "lastUpdatedAt"
+      ]
+    },
+    "ExchangeSizes": {
+      "type": "object",
+      "properties": {
+        "requestBody": {
+          "$ref": "#/$defs/ByteCount"
+        },
+        "requestHeaders": {
+          "$ref": "#/$defs/ByteCount"
+        },
+        "responseBody": {
+          "$ref": "#/$defs/ByteCount"
+        },
+        "responseHeaders": {
+          "$ref": "#/$defs/ByteCount"
+        },
+        "total": {
+          "$ref": "#/$defs/ByteCount"
+        }
+      },
+      "required": [
+        "requestHeaders",
+        "requestBody",
+        "responseHeaders",
+        "responseBody",
+        "total"
+      ]
+    },
+    "ExchangeState": {
+      "type": "string",
+      "enum": [
+        "inFlight",
+        "completed",
+        "failed",
+        "cancelled",
+        "incomplete"
+      ]
+    },
+    "ExchangeTiming": {
+      "type": "object",
+      "properties": {
+        "connect": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "dns": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "exchangeEndedMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "queue": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "requestBodyFinishedMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "requestHeadersSentMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "requestWrite": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "responseBodyFinishedMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "responseHeadersReceivedMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "responseRead": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "serverWait": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "tls": {
+          "$ref": "#/$defs/DurationValue"
+        },
+        "total": {
+          "$ref": "#/$defs/DurationValue"
+        }
+      },
+      "required": [
+        "dns",
+        "connect",
+        "tls",
+        "queue",
+        "requestWrite",
+        "serverWait",
+        "responseRead",
+        "total"
+      ]
+    },
+    "HeaderEntry": {
+      "description": "Retains header duplication and arrival order; no values are transformed or masked.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptureProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "HelloAccepted": {
+      "description": "The inspector response after a successful protocol negotiation.",
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "maximumBodyBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "maximumMessageBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "connectionId",
+        "sessionId",
+        "maximumMessageBytes",
+        "maximumBodyBytes"
+      ]
+    },
+    "HelloError": {
+      "description": "Machine-readable handshake or message failures for adapters.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ]
+    },
+    "HttpBody": {
+      "description": "Captured body descriptors preserve the data supplied by an adapter without value redaction.",
+      "type": "object",
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/BodyAvailability"
+        },
+        "capturedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "charset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BodyContent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contentEncoding": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "declaredByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "mediaType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "truncationReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "availability"
+      ]
+    },
+    "HttpExchange": {
+      "description": "The authoritative model stored by the capture hub and fetched by the inspector UI.",
+      "type": "object",
+      "properties": {
+        "arrivalSequence": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "capture": {
+          "$ref": "#/$defs/CaptureFidelity"
+        },
+        "correlation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CorrelationContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExchangeFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/ExchangeLifecycle"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "request": {
+          "$ref": "#/$defs/HttpRequest"
+        },
+        "response": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpResponse"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "sizes": {
+          "$ref": "#/$defs/ExchangeSizes"
+        },
+        "source": {
+          "$ref": "#/$defs/CaptureSource"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timing": {
+          "$ref": "#/$defs/ExchangeTiming"
+        },
+        "transport": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "sessionId",
+        "revision",
+        "arrivalSequence",
+        "source",
+        "lifecycle",
+        "request",
+        "timing",
+        "sizes",
+        "capture",
+        "tags",
+        "metadata"
+      ]
+    },
+    "HttpExchangeSummary": {
+      "description": "UI streaming remains small by sending this projection instead of body content in every delta.",
+      "type": "object",
+      "properties": {
+        "arrivalSequence": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "info": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "$ref": "#/$defs/ExchangeKey"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/ExchangeLifecycle"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "port": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "revision": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "scheme": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceName": {
+          "type": "string"
+        },
+        "statusCode": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "totalBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "revision",
+        "arrivalSequence",
+        "lifecycle",
+        "method",
+        "url",
+        "sourceName",
+        "tags"
+      ]
+    },
+    "HttpRequest": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpBody"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fragment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HeaderEntry"
+          }
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "localAddress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AddressDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "method": {
+          "type": "string"
+        },
+        "originalMethod": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pathSegments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "protocol": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QueryEntry"
+          }
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpBody"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remoteAddress": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AddressDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheme": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "url",
+        "pathSegments",
+        "query",
+        "headers"
+      ]
+    },
+    "HttpResponse": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpBody"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HeaderEntry"
+          }
+        },
+        "protocol": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpBody"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasonPhrase": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "statusCode": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "statusCode",
+        "headers"
+      ]
+    },
+    "ProtocolRange": {
+      "description": "Inclusive protocol range advertised by an adapter during the initial handshake.",
+      "type": "object",
+      "properties": {
+        "maximum": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "minimum": {
+          "$ref": "#/$defs/SchemaVersion"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ]
+    },
+    "QueryEntry": {
+      "description": "Retains query duplication, original order, and a distinction between absent and empty values.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptureProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "SchemaVersion": {
+      "description": "Contract compatibility version negotiated between an adapter and the inspector.",
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "minor": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ]
+    },
+    "ServerMessage": {
+      "description": "All server messages retain an explicit v1 discriminator for language-neutral adapters.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "hello.accepted"
+            },
+            "value": {
+              "$ref": "#/$defs/HelloAccepted"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "hello.error"
+            },
+            "value": {
+              "$ref": "#/$defs/HelloError"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "messageId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "message.accepted"
+            }
+          },
+          "required": [
+            "type",
+            "messageId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/HelloError"
+            },
+            "messageId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "message.error"
+            }
+          },
+          "required": [
+            "type",
+            "error"
+          ]
+        }
+      ]
+    }
+  }
+}

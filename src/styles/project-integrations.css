@@ -1,0 +1,42 @@
+.integration-dialog-backdrop { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 28px; background: var(--overlay); }
+.integration-dialog { display: flex; width: min(880px, 100%); max-height: min(820px, calc(100vh - 56px)); overflow: hidden; flex-direction: column; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); box-shadow: 0 24px 70px rgb(0 0 0 / 30%); }
+.integration-dialog-header, .integration-section-heading, .integration-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.integration-dialog-header { padding: 18px 20px; border-bottom: 1px solid var(--border); background: var(--surface-header); }
+.integration-dialog-body { overflow: auto; padding: 18px; background: var(--surface-muted); }
+.integration-runtime { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); font-size: 12px; }
+.integration-runtime strong { font-size: 13px; }
+.integration-runtime span { color: var(--muted); text-align: right; }
+.integration-runtime.is-available { border-left: 4px solid var(--success); }
+.integration-runtime.is-unavailable { border-left: 4px solid var(--warning); }
+.integration-card { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--surface); }
+.integration-card:first-of-type { margin-top: 0; }
+.integration-card h3 { margin: 0 0 6px; font-size: 15px; }
+.integration-card p { margin-bottom: 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.integration-bash-picker code { border-radius: 3px; padding: 1px 3px; background: var(--surface-code); color: var(--text); font: 11px var(--font-mono); }
+.integration-path-form { display: flex; align-items: flex-end; gap: 10px; }
+.integration-path-form label, .integration-preview > label { display: grid; flex: 1; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.integration-path-form input, .integration-preview select { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 9px; background: var(--surface-code); color: var(--text); font: 12px var(--font-mono); }
+.integration-preview dl { margin: 10px 0; border: 1px solid var(--divider-soft); border-radius: 7px; }
+.integration-preview dl > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); border-bottom: 1px solid var(--divider-soft); }
+.integration-preview dl > div:last-child { border-bottom: 0; }
+.integration-preview dt, .integration-preview dd { margin: 0; padding: 7px 9px; font-size: 11px; }
+.integration-preview dt { background: var(--surface-muted); color: var(--muted); font-weight: 700; }
+.integration-preview dd { overflow-wrap: anywhere; font-family: var(--font-mono); }
+.integration-preview ul { margin: 10px 0 14px; padding-left: 22px; color: var(--text); font-size: 12px; line-height: 1.7; }
+.integration-coverage { margin: 12px 0 14px; border-top: 1px solid var(--divider-soft); }
+.integration-coverage h4 { margin: 12px 0 8px; font-size: 12px; }
+.integration-coverage article { border: 1px solid var(--divider-soft); border-radius: 7px; margin-top: 8px; padding: 9px; }
+.integration-coverage strong, .integration-coverage span { display: block; font-size: 11px; }
+.integration-coverage span { color: var(--muted); margin-top: 3px; }
+.integration-coverage p { margin: 6px 0 0; }
+.integration-coverage ul { margin: 6px 0 0; font-family: var(--font-mono); font-size: 10px; }
+.integration-section-heading p { margin: 2px 0 0; }
+.integration-row { margin-top: 8px; border: 1px solid var(--divider-soft); border-radius: 7px; padding: 10px; }
+.integration-row.needs-attention { border-left: 4px solid var(--warning); }
+.integration-row > div:first-child { display: grid; min-width: 0; gap: 4px; }
+.integration-row strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.integration-row span { color: var(--muted); font: 10px var(--font-mono); }
+.integration-row > div:last-child { display: flex; gap: 7px; }
+.integration-empty { margin: 12px 0 0 !important; }
+.integration-error { margin: 0 0 14px; border: 1px solid color-mix(in srgb, var(--error) 42%, var(--border)); border-radius: 7px; padding: 9px 11px; background: var(--diagnostic-background); color: var(--diagnostic-text) !important; }
+@media (max-width: 760px) { .integration-dialog-backdrop { padding: 10px; } .integration-path-form, .integration-runtime { align-items: stretch; flex-direction: column; } .integration-runtime span { text-align: left; } }

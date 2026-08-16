@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HTTP Inspector",
+  "version": "0.1.0",
+  "identifier": "com.jovi.httpinspector",
+  "build": {
+    "beforeDevCommand": "bash adapters/dotnet/HttpInspector.Adapter/build-bundle.sh && pnpm dev:ui",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "pnpm build && bash adapters/dotnet/HttpInspector.Adapter/build-bundle.sh",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "HTTP Inspector",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; img-src 'self' asset: data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

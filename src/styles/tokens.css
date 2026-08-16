@@ -1,0 +1,152 @@
+:root {
+  color-scheme: light;
+  color: #15253d;
+  background: #e7ecf3;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --surface: #ffffff;
+  --surface-muted: #f5f7fa;
+  --surface-tint: #e9f2ff;
+  --surface-header: #f8faff;
+  --surface-code: #fbfcfe;
+  --surface-active: #ddebff;
+  --app-background: #e7ecf3;
+  --app-glow: #f7faff;
+  --border: #d2dbe7;
+  --divider-soft: #edf0f5;
+  --text: #15253d;
+  --muted: #66758a;
+  --accent: #1976d2;
+  --accent-deep: #0c5fae;
+  --focus-ring: #1976d2;
+  --live: #2a79d7;
+  --success: #16835c;
+  --redirect: #7b61d1;
+  --warning: #d68a00;
+  --error: #cf3e3e;
+  --diagnostic-background: #fff4f2;
+  --diagnostic-text: #a13b32;
+  --on-accent: #ffffff;
+  --disclosure: #8d98a7;
+  --file-icon-surface: #f5f7fa;
+  --file-icon-fold: #d2dbe7;
+  --file-icon-border: #aeb9c8;
+  --file-icon-text: #53657b;
+  --overlay: rgb(20 37 59 / 38%);
+  --json-property: #c85d00;
+  --json-string: #087e5b;
+  --json-number: #7c8100;
+  --json-boolean: #205dc6;
+  --json-null: #7650b5;
+  --xml-tag: #c85d00;
+  --xml-attribute: #7650b5;
+  --xml-string: #205dc6;
+  --xml-comment: #66758a;
+  --density-row: 29px;
+  --shadow: 0 18px 55px rgb(28 56 94 / 14%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #e7edf5;
+  background: #111a26;
+  --surface: #172231;
+  --surface-muted: #1e2b3c;
+  --surface-tint: #203a59;
+  --surface-header: #1b2939;
+  --surface-code: #131e2b;
+  --surface-active: #294c73;
+  --app-background: #111a26;
+  --app-glow: #1c2b3e;
+  --border: #35485f;
+  --divider-soft: #2a3b50;
+  --text: #e7edf5;
+  --muted: #adbac9;
+  --accent: #6db5ff;
+  --accent-deep: #a7d2ff;
+  --focus-ring: #9ccfff;
+  --live: #7bb7ff;
+  --success: #58c89a;
+  --redirect: #b6a0ff;
+  --warning: #f0ae43;
+  --error: #ff7d78;
+  --diagnostic-background: #3b2427;
+  --diagnostic-text: #ffaaa4;
+  --on-accent: #07192b;
+  --disclosure: #9eabba;
+  --file-icon-surface: #26384c;
+  --file-icon-fold: #35485f;
+  --file-icon-border: #71839a;
+  --file-icon-text: #dce8f5;
+  --overlay: rgb(3 10 18 / 68%);
+  --json-property: #ffad66;
+  --json-string: #6dd9b2;
+  --json-number: #c7cf67;
+  --json-boolean: #81bbff;
+  --json-null: #c9a8ff;
+  --xml-tag: #ffad66;
+  --xml-attribute: #c9a8ff;
+  --xml-string: #81bbff;
+  --xml-comment: #adbac9;
+  --shadow: 0 18px 55px rgb(0 0 0 / 32%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    color: #e7edf5;
+    background: #111a26;
+    --surface: #172231;
+    --surface-muted: #1e2b3c;
+    --surface-tint: #203a59;
+    --surface-header: #1b2939;
+    --surface-code: #131e2b;
+    --surface-active: #294c73;
+    --app-background: #111a26;
+    --app-glow: #1c2b3e;
+    --border: #35485f;
+    --divider-soft: #2a3b50;
+    --text: #e7edf5;
+    --muted: #adbac9;
+    --accent: #6db5ff;
+    --accent-deep: #a7d2ff;
+    --focus-ring: #9ccfff;
+    --live: #7bb7ff;
+    --success: #58c89a;
+    --redirect: #b6a0ff;
+    --warning: #f0ae43;
+    --error: #ff7d78;
+    --diagnostic-background: #3b2427;
+    --diagnostic-text: #ffaaa4;
+    --on-accent: #07192b;
+    --disclosure: #9eabba;
+    --file-icon-surface: #26384c;
+    --file-icon-fold: #35485f;
+    --file-icon-border: #71839a;
+    --file-icon-text: #dce8f5;
+    --overlay: rgb(3 10 18 / 68%);
+    --json-property: #ffad66;
+    --json-string: #6dd9b2;
+    --json-number: #c7cf67;
+    --json-boolean: #81bbff;
+    --json-null: #c9a8ff;
+    --xml-tag: #ffad66;
+    --xml-attribute: #c9a8ff;
+    --xml-string: #81bbff;
+    --xml-comment: #adbac9;
+    --shadow: 0 18px 55px rgb(0 0 0 / 32%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 1ms !important; }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 980px; min-height: 100vh; background: var(--app-background); color: var(--text); }
+button, input, textarea, select { color: var(--text); font: inherit; }
+button { appearance: none; -webkit-appearance: none; cursor: pointer; }
+input[type="checkbox"] { accent-color: var(--accent); }
+button:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus-ring) 42%, transparent); outline-offset: 2px; }

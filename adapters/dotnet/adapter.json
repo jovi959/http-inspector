@@ -1,0 +1,26 @@
+{
+  "id": "dotnet-httpclient",
+  "name": ".NET multi-client capture",
+  "version": "1.3.2",
+  "payloadSpecVersion": "1.0.0",
+  "integrationProtocolVersion": "1.0.0",
+  "package": {
+    "id": "HttpInspector.Adapter",
+    "version": "1.3.2",
+    "file": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.3.2.nupkg",
+    "sha256": "519bd69054462d616893831329ff37ed08c73d7df0d372018c18c49e60cf7997",
+    "sha256File": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.3.2.nupkg.sha256"
+  },
+  "integration": {
+    "shell": "bash",
+    "strategy": "dotnet-multiclient-nuget-bash-v4",
+    "inspect": "HttpInspector.Adapter.Integration/inspect.sh",
+    "list": "HttpInspector.Adapter.Integration/list.sh",
+    "preRun": "HttpInspector.Adapter.Integration/pre-run.sh",
+    "postRun": "HttpInspector.Adapter.Integration/post-run.sh",
+    "run": "HttpInspector.Adapter.Integration/run-with-http-inspector.sh",
+    "status": "HttpInspector.Adapter.Integration/status.sh",
+    "recover": "HttpInspector.Adapter.Integration/recover.sh"
+  },
+  "defaultEndpoint": "ws://127.0.0.1:53662/v1/capture"
+}

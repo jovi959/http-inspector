@@ -1,0 +1,11 @@
+# Generated frontend and Rust output must not be committed.
+node_modules/
+dist/
+target/
+src-tauri/target/
+artifacts/
+# Keep superseded local package builds out of version control. The current package and its checksum are tracked.
+adapters/dotnet/HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.2.[0-3].nupkg
+adapters/dotnet/HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.2.[0-3].nupkg.sha256
+.DS_Store
+.playwright-mcp/

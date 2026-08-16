@@ -1,0 +1,8 @@
+  <!-- HTTP_INSPECTOR_INJECTION:{{RUN_ID}}:BEGIN -->
+  <ItemGroup>
+    <Reference Include="HttpInspector.Adapter">
+      <HintPath>{{ADAPTER_BINARY}}</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <!-- HTTP_INSPECTOR_INJECTION:{{RUN_ID}}:END -->

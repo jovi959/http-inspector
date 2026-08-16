@@ -1,0 +1,24 @@
+[package]
+name = "inspector-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
+brotli = "8"
+chrono = "0.4"
+flate2 = "1"
+futures-util = "0.3"
+inspector-core = { path = "../inspector-core" }
+inspector-project-integration = { path = "../inspector-project-integration" }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.50", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1.24", features = ["v4"] }
+
+[[bin]]
+name = "inspector-dev-server"
+path = "src/main.rs"

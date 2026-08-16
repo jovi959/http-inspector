@@ -1,0 +1,136 @@
+---
+config:
+  class:
+    hideEmptyMembersBox: true
+---
+classDiagram
+    direction TB
+
+    class REQUEST["GET /saas/d365/v9.2/sample_records"]
+
+    class sample_records {
+        field_assignment
+        field_title
+        _field_owner
+        field_category
+        _field_project
+        _field_schedule
+    }
+
+    class ALL
+    class EXPAND
+
+    REQUEST --> sample_records
+    sample_records --> ALL : FILTER
+    sample_records --> EXPAND : EXPAND
+
+    class F1["field_category"]
+    class V1["1001"]
+    ALL --> F1 : AND
+    F1 --> V1 : =
+
+    class F2["_field_project"]
+    class V2["null"]
+    ALL --> F2 : AND
+    F2 --> V2 : !=
+
+    class F3["_field_schedule"]
+    class V3["null"]
+    ALL --> F3 : AND
+    F3 --> V3 : !=
+
+    class F4["field_assignment"]
+    class V4A["2001"]
+    class V4B["2002"]
+    ALL --> F4 : AND
+    F4 --> V4A : OR =
+    F4 --> V4B : OR =
+
+    class F5["relation_workflow"]
+    class V5["22222222-3333-4444-8555-666666666666"]
+    ALL --> F5 : AND ANY
+    F5 --> V5 : _field_stage !=
+
+    class F6["relation_workflow"]
+    class V6["0"]
+    ALL --> F6 : AND NOT ANY
+    F6 --> V6 : field_status !=
+
+    class F7["relation_owner/field_login"]
+    class V7["TEST_USER"]
+    ALL --> F7 : AND
+    F7 --> V7 : CONTAINS
+
+    class relation_account {
+        field_account_id
+        field_name
+        field_account_number
+        field_trade
+    }
+
+    class relation_contact {
+        field_contact_id
+        field_first_name
+        field_last_name
+    }
+
+    class relation_location {
+        field_location_id
+        field_city
+        field_postal_code
+        field_country
+        field_latitude
+        field_location_name
+        field_longitude
+        field_region
+        field_address
+    }
+
+    class relation_owner {
+        field_user_id
+        field_login
+    }
+
+    class relation_team {
+        field_team_id
+        field_name
+    }
+
+    class relation_workflow {
+        field_workflow_id
+        _field_stage
+        field_status
+        field_modified
+    }
+
+    class relation_account_locations {
+        field_account_id
+        field_name
+        field_location_number
+    }
+
+    class relation_schedule {
+        field_schedule_id
+        _field_location
+        _field_pool
+        _field_sector
+        _field_stream
+        _field_subsector
+    }
+
+    class relation_classification {
+        field_classification_id
+        field_name
+        field_classification_number
+    }
+
+    EXPAND --> relation_account
+    EXPAND --> relation_contact
+    EXPAND --> relation_location
+    EXPAND --> relation_owner
+    EXPAND --> relation_team
+    EXPAND --> relation_workflow
+    EXPAND --> relation_account_locations
+    EXPAND --> relation_schedule
+
+    relation_schedule --> relation_classification : EXPAND

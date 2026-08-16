@@ -1,0 +1,8 @@
+[workspace]
+members = ["crates/inspector-core", "crates/inspector-project-integration", "crates/inspector-server", "src-tauri"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "UNLICENSED"
+version = "0.1.0"

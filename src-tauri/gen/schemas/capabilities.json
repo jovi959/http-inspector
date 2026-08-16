@@ -1,0 +1,1 @@
+{"main-capability":{"identifier":"main-capability","description":"The main inspector window has no broad core/plugin grants; future capture commands must be granted explicitly.","local":true,"windows":["main"],"permissions":[]}}

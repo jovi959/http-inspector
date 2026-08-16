@@ -1,0 +1,9 @@
+[
+  { "name": "negative size", "pointer": "/sizes/requestHeaders/bytes", "value": -1, "outcome": "deserialize" },
+  { "name": "negative timing", "pointer": "/timing/dns/milliseconds", "value": -1, "outcome": "deserialize" },
+  { "name": "invalid status", "pointer": "/response/statusCode", "value": 700, "outcome": "validate", "error": "response status must be between 100 and 599" },
+  { "name": "invalid schema version", "pointer": "/schemaVersion/major", "value": 2, "outcome": "validate", "error": "schema version major must be 1" },
+  { "name": "invalid UUID", "pointer": "/id", "value": "not-a-uuid", "outcome": "validate", "error": "exchange id must be a UUID" },
+  { "name": "oversized metadata", "pointer": "/metadata", "value": { "root": { "first": "one", "second": "two" } }, "outcome": "validate", "metadataMaxKeys": 1, "error": "metadata exceeds key count limit" },
+  { "name": "contradictory lifecycle", "pointer": "/lifecycle/state", "value": "failed", "outcome": "validate", "error": "failed exchange requires a failure" }
+]
