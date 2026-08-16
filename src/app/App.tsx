@@ -11,6 +11,7 @@ import { SequenceView } from "@/features/sequence/SequenceView";
 import { StructureView } from "@/features/structure/StructureView";
 import { RecomposeContextMenu } from "@/features/recompose/RecomposeContextMenu";
 import { createRecomposeDraft } from "@/features/recompose/recomposeDraft";
+import { exportExchange } from "@/features/export/exchangeExport";
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
 import type { HttpExchange } from "@/generated/contracts";
@@ -126,7 +127,10 @@ export function App({ dataSource, projectIntegration }: AppProps) {
         statusBar={<CaptureStatusBar status={captureStatus} listener={dataSource.listener} onRetry={() => dataSource.retryConnection()} />}
         onPaneLayoutChange={setPaneLayout}
       />
-      {recomposeMenu && <RecomposeContextMenu exchange={recomposeMenu.exchange} x={recomposeMenu.x} y={recomposeMenu.y} onClose={() => setRecomposeMenu(null)} onRecompose={(exchange) => {
+      {recomposeMenu && <RecomposeContextMenu exchange={recomposeMenu.exchange} x={recomposeMenu.x} y={recomposeMenu.y} onClose={() => setRecomposeMenu(null)} onExport={(exchange) => {
+        void exportExchange(dataSource, exchange);
+        setRecomposeMenu(null);
+      }} onRecompose={(exchange) => {
         openRecomposeDraft(createRecomposeDraft(exchange));
         setWorkspaceView("structure");
         setRecomposeMenu(null);

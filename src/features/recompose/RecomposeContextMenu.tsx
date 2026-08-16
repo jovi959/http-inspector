@@ -7,11 +7,12 @@ interface RecomposeContextMenuProps {
   readonly x: number;
   readonly y: number;
   onClose(): void;
+  onExport(exchange: HttpExchange): void;
   onRecompose(exchange: HttpExchange): void;
 }
 
 /** A focused one-action menu keeps request replay discoverable directly from both primary views. */
-export function RecomposeContextMenu({ exchange, x, y, onClose, onRecompose }: RecomposeContextMenuProps) {
+export function RecomposeContextMenu({ exchange, x, y, onClose, onExport, onRecompose }: RecomposeContextMenuProps) {
   useEffect(() => {
     const close = () => onClose();
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
@@ -25,6 +26,7 @@ export function RecomposeContextMenu({ exchange, x, y, onClose, onRecompose }: R
   return (
     <div className="recompose-context-menu" role="menu" style={{ left: x, top: y }} onPointerDown={(event) => event.stopPropagation()}>
       <button autoFocus role="menuitem" type="button" onClick={() => onRecompose(exchange)}>Recompose &amp; replay</button>
+      <button role="menuitem" type="button" onClick={() => onExport(exchange)}>Export request &amp; response</button>
     </div>
   );
 }
