@@ -115,8 +115,8 @@ function firstReturnedExpansionRecord(parentRecord: DataverseRecord | null, rela
 }
 
 function renderMember(column: string, record: DataverseRecord | null): string {
-  if (!record) return escapeLabel(column);
-  return `${escapeLabel(column)} = ${escapeLabel(createDataverseRecordValuePresentation(record[column]).text)}`;
+  if (!record) return escapeMember(column);
+  return `${escapeMember(column)} = ${escapeMember(createDataverseRecordValuePresentation(record[column]).text)}`;
 }
 
 function isDataverseRecord(value: DataverseRecordValue | undefined): value is DataverseRecord {
@@ -130,4 +130,10 @@ function alphabeticSuffix(index: number): string {
 function escapeLabel(value: string): string {
   const label = value.replaceAll("&", "&amp;").replaceAll("\"", "&quot;").replaceAll("\n", " ").trim();
   return label || "(empty)";
+}
+
+function escapeMember(value: string): string {
+  const member = value.replaceAll("\r", " ").replaceAll("\n", " ").replaceAll("{", "(").replaceAll("}", ")").trim();
+  if (member.startsWith("\"") && member.endsWith("\"")) return `'${member.slice(1, -1).replaceAll("\\\"", "“")}'`;
+  return member || "(empty)";
 }

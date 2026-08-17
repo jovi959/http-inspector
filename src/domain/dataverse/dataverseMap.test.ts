@@ -85,11 +85,11 @@ describe("Dataverse Map", () => {
     const map = createDataverseMap({ method: "GET", url: requestUrl });
 
     expect(response).toMatchObject({ records: [expect.objectContaining({ field_title: "First incident" })], error: null });
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_title = &quot;First incident&quot;");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_title = 'First incident'");
     expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_category = 1001");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Northwind&quot;");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_schedule_id = &quot;work-1&quot;");
-    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Construction&quot;");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = 'Northwind'");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_schedule_id = 'work-1'");
+    expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = 'Construction'");
   });
 
   test("renders the first returned record for each expanded collection deterministically", () => {
@@ -100,9 +100,9 @@ describe("Dataverse Map", () => {
     expect(response.error).toBeNull();
     expect(response.records).toHaveLength(7);
     expect(response.records).toEqual(expect.arrayContaining([expect.objectContaining({ relation_request: expect.objectContaining({ field_request_id: "request-5" }) })]));
-    expect(diagram).toContain("        field_workflow_id = &quot;workflow-5a&quot;");
-    expect(diagram).not.toContain("        field_workflow_id = &quot;workflow-5b&quot;");
-    expect(diagram).toContain("        field_center_number = &quot;CENTER-5&quot;");
+    expect(diagram).toContain("        field_workflow_id = 'workflow-5a'");
+    expect(diagram).not.toContain("        field_workflow_id = 'workflow-5b'");
+    expect(diagram).toContain("        field_center_number = 'CENTER-5'");
   });
 
   test("keeps only the newest Mermaid render request eligible to update the diagram", () => {
@@ -132,11 +132,12 @@ describe("Dataverse Map", () => {
     expect(createDataverseRecordValuePresentation(true)).toEqual({ kind: "boolean", text: "true" });
     expect(createDataverseRecordValuePresentation(null)).toEqual({ kind: "null", text: "null" });
     expect(createDataverseRecordValuePresentation(undefined)).toEqual({ kind: "unavailable", text: "not returned" });
-    expect(typeDiagram).toContain("        field_text = &quot;North incident&quot;");
+    expect(typeDiagram).toContain("        field_text = 'North incident'");
     expect(typeDiagram).toContain("        field_number = 1001");
     expect(typeDiagram).toContain("        field_boolean = true");
     expect(typeDiagram).toContain("        field_null = null");
     expect(getDataverseDiagramValueKind('"1001"')).toBe("string");
+    expect(getDataverseDiagramValueKind("'North incident'")).toBe("string");
     expect(getDataverseDiagramValueKind("1001")).toBe("number");
     expect(getDataverseDiagramValueKind("true")).toBe("boolean");
     expect(getDataverseDiagramValueKind("null")).toBe("null");

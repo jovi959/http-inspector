@@ -48,6 +48,7 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [renderError, setRenderError] = useState<string | null>(null);
   const record = recordIndex < 0 ? null : responseRecords.records[recordIndex] ?? null;
+  const mermaidSource = useMemo(() => renderDataverseClassDiagram(map, record), [map, record]);
 
   useEffect(() => {
     setRecordIndex(-1);
@@ -60,30 +61,37 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
   useEffect(() => {
     let disposed = false;
     const renderRequest = renderSequence.current.begin();
-    const source = renderDataverseClassDiagram(map, record);
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
     async function renderDiagram() {
       try {
         const { default: mermaid } = await import("mermaid");
         mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: isDark ? "dark" : "default" });
-        const detachedContainer = document.createElement("div");
-        const { svg } = await mermaid.render(renderRequest.id, source, detachedContainer);
-        if (!disposed && renderSequence.current.isLatest(renderRequest) && diagramContainer.current) {
-          diagramContainer.current.innerHTML = svg;
-          const renderedDiagram = diagramContainer.current.querySelector("svg");
-          if (renderedDiagram) decorateDataverseDiagramValues(renderedDiagram);
-          setDiagramRevision((current) => current + 1);
-          setRenderError(null);
+        const renderContainer = document.createElement("div");
+        renderContainer.setAttribute("aria-hidden", "true");
+        renderContainer.style.cssText = "position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none";
+        document.body.append(renderContainer);
+        try {
+          const { svg } = await mermaid.render(renderRequest.id, mermaidSource, renderContainer);
+          if (!disposed && renderSequence.current.isLatest(renderRequest) && diagramContainer.current) {
+            diagramContainer.current.innerHTML = svg;
+            const renderedDiagram = diagramContainer.current.querySelector("svg");
+            if (renderedDiagram) decorateDataverseDiagramValues(renderedDiagram);
+            setDiagramRevision((current) => current + 1);
+            setRenderError(null);
+          }
+        } finally {
+          renderContainer.remove();
         }
-      } catch {
+      } catch (error) {
+        console.error("Dataverse Map render failed.", error);
         if (!disposed && renderSequence.current.isLatest(renderRequest)) setRenderError("The Dataverse Map could not be rendered for this request.");
       }
     }
 
     void renderDiagram();
     return () => { disposed = true; };
-  }, [map, record, theme]);
+  }, [mermaidSource, theme]);
 
   useEffect(() => {
     const svg = diagramContainer.current?.querySelector("svg");
@@ -162,6 +170,10 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
       </div>
       {renderError && <p className="dataverse-map-error">{renderError}</p>}
       <div ref={diagramContainer} className="dataverse-map-canvas" onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={zoomWithWheel} />
+      <details className="dataverse-map-source">
+        <summary>Raw Mermaid source</summary>
+        <pre><code>{mermaidSource}</code></pre>
+      </details>
     </section>
   );
 }
