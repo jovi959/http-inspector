@@ -10,6 +10,7 @@ import { CodeBodyViewer } from "@/features/inspector/body/CodeBodyViewer";
 import { HexBodyViewer } from "@/features/inspector/body/HexBodyViewer";
 import { MessageBodyToolbar } from "@/features/inspector/body/MessageBodyToolbar";
 import { useCapturedBody } from "@/features/inspector/body/useCapturedBody";
+import { useBodyTextPresentation } from "@/features/inspector/body/useBodyTextPresentation";
 import type { ExchangeKey, HttpRequest, HttpResponse } from "@/generated/contracts";
 
 // CodeMirror belongs in its own chunk because most request selection never opens a JSON body.
@@ -33,14 +34,15 @@ export function MessageInspector({ bodyRevision, dataSource, exchangeKey, messag
   const rawPart = title === "Request" ? "requestRaw" : "responseRaw";
   const bodyResult = useCapturedBody(dataSource, exchangeKey, bodyPart, message.body);
   const rawResult = useCapturedBody(dataSource, exchangeKey, rawPart, message.raw);
+  const bodyTextResult = useBodyTextPresentation(bodyResult.body);
   const query = title === "Request" ? (message as HttpRequest).query : [];
   const availableViews = useMemo<ReadonlyArray<MessageView>>(() => {
-    const bodyViews = getAvailableBodyViews(bodyResult.body);
+    const bodyViews = getAvailableBodyViews(bodyResult.body, bodyTextResult.text);
     const messageViews = bodyViews.flatMap((view) => view === "headers" ? [view, "authentication" as const] : [view]);
     return query.length > 0 ? [...messageViews.slice(0, 2), "query", ...messageViews.slice(2)] : messageViews;
-  }, [bodyResult.body, query.length]);
+  }, [bodyResult.body, bodyTextResult.text, query.length]);
   const [activeView, setActiveView] = useState<MessageView>(availableViews.includes("json") ? "json" : availableViews.includes("xml") ? "xml" : "headers");
-  const bodyText = getInlineText(bodyResult.body) ?? getBodyPlaceholder(bodyResult.body?.availability ?? "notApplicable");
+  const bodyText = bodyTextResult.text ?? getBodyPlaceholder(bodyResult.body?.availability ?? "notApplicable");
   const raw = getRawPresentation(message, bodyResult.body, rawResult.body, title, rawFidelity);
 
   useEffect(() => {
@@ -50,10 +52,12 @@ export function MessageInspector({ bodyRevision, dataSource, exchangeKey, messag
   return (
     <section className="message-inspector">
       <div className="message-heading"><span>{title}</span><span>{message.body?.mediaType ?? "No content type"}</span></div>
-      {activeView !== "query" && activeView !== "headers" && activeView !== "authentication" && <MessageBodyToolbar body={activeView === "raw" ? (rawResult.body ?? bodyResult.body) : bodyResult.body} rawFidelity={activeView === "raw" ? raw.fidelity : null} />}
+      {activeView !== "query" && activeView !== "headers" && activeView !== "authentication" && <MessageBodyToolbar body={activeView === "raw" ? (rawResult.body ?? bodyResult.body) : bodyResult.body} decodedCharset={activeView === "raw" || !bodyTextResult.isDecoded || bodyResult.body?.charset !== null ? null : "UTF-8 (inferred)"} rawFidelity={activeView === "raw" ? raw.fidelity : null} />}
       <div className="message-content">
         {bodyResult.isLoading && <p className="body-load-state">Loading captured body…</p>}
         {bodyResult.error && <p className="body-load-state is-error">Captured body unavailable: {bodyResult.error}</p>}
+        {bodyTextResult.isLoading && <p className="body-load-state">Decoding captured {bodyResult.body?.contentEncoding ?? "binary"} body…</p>}
+        {bodyTextResult.error && <p className="body-load-state is-error">Captured body could not be decoded: {bodyTextResult.error}</p>}
         {activeView === "headers" && <HeadersViewer headers={message.headers} />}
         {activeView === "authentication" && <AuthenticationViewer headers={message.headers} />}
         {activeView === "query" && <QueryParametersViewer query={query} />}
@@ -67,7 +71,7 @@ export function MessageInspector({ bodyRevision, dataSource, exchangeKey, messag
       </div>
       <nav className="body-view-tabs" aria-label={`${title} representations`}>
         {availableViews.map((view) => (
-          <button key={view} className={activeView === view ? "is-active" : ""} type="button" onClick={() => setActiveView(view)}>{getViewLabel(view, bodyResult.body)}</button>
+          <button key={view} className={activeView === view ? "is-active" : ""} type="button" onClick={() => setActiveView(view)}>{getViewLabel(view, bodyResult.body, bodyTextResult.text)}</button>
         ))}
       </nav>
     </section>
@@ -96,11 +100,11 @@ function rawBodyBase64(body: HttpRequest["raw"]): string | null {
   return `[Captured binary wire body encoded as base64]\r\n${body.content.value}`;
 }
 
-function getViewLabel(view: MessageView, body: HttpRequest["body"]): string {
+function getViewLabel(view: MessageView, body: HttpRequest["body"], text: string | null): string {
   if (view === "json") return "JSON";
   if (view === "xml") return "XML";
   if (view !== "text") return `${view.charAt(0).toUpperCase()}${view.slice(1)}`;
-  const bodyViews = getAvailableBodyViews(body);
+  const bodyViews = getAvailableBodyViews(body, text);
   if (bodyViews.includes("json")) return "JSON Text";
   if (bodyViews.includes("xml")) return "XML Text";
   return "Text";

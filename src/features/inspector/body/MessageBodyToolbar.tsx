@@ -3,15 +3,16 @@ import type { HttpBody } from "@/generated/contracts";
 
 interface MessageBodyToolbarProps {
   readonly body: HttpBody | null;
+  readonly decodedCharset: string | null;
   readonly rawFidelity: string | null;
 }
 
 /** Shows captured-body facts without assuming that unavailable content is empty. */
-export function MessageBodyToolbar({ body, rawFidelity }: MessageBodyToolbarProps) {
+export function MessageBodyToolbar({ body, decodedCharset, rawFidelity }: MessageBodyToolbarProps) {
   if (!body) return <p className="body-facts">No body was captured for this message.</p>;
   const facts = [
     body.mediaType ?? "Unknown media type",
-    body.charset ?? "Unknown charset",
+    body.charset ?? decodedCharset ?? "Unknown charset",
     `Captured ${formatBytes(body.capturedByteLength)}`,
     body.availability,
   ];

@@ -12,6 +12,7 @@ import { StructureView } from "@/features/structure/StructureView";
 import { RecomposeContextMenu } from "@/features/recompose/RecomposeContextMenu";
 import { createRecomposeDraft } from "@/features/recompose/recomposeDraft";
 import { exportExchange } from "@/features/export/exchangeExport";
+import { parseExchangeImport } from "@/features/import/exchangeImport";
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
 import type { HttpExchange } from "@/generated/contracts";
@@ -21,6 +22,9 @@ import { ProjectIntegrationsDialog } from "@/features/projectIntegration/Project
 interface AppProps {
   readonly dataSource: CaptureDataSource;
   readonly projectIntegration: ProjectIntegrationService;
+  readonly isImported?: boolean;
+  onImportedExchange?(exchange: HttpExchange): void;
+  onReturnToLiveCapture?(): void;
 }
 
 interface RecomposeMenuState {
@@ -30,11 +34,12 @@ interface RecomposeMenuState {
 }
 
 /** Loads the injected source once and renders the two synchronized capture projections. */
-export function App({ dataSource, projectIntegration }: AppProps) {
+export function App({ dataSource, isImported = false, onImportedExchange, onReturnToLiveCapture, projectIntegration }: AppProps) {
   const [recomposeMenu, setRecomposeMenu] = useState<RecomposeMenuState | null>(null);
   const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
   const [activeIntegrationCount, setActiveIntegrationCount] = useState(0);
   const [captureEndpoint, setCaptureEndpoint] = useState("ws://127.0.0.1:53662/v1/capture");
+  const [importError, setImportError] = useState<string | null>(null);
   const recording = useCaptureStore((state) => state.captureStatus.recording);
   const captureStatus = useCaptureStore((state) => state.captureStatus);
   const totalCount = useCaptureStore((state) => state.arrivalOrder.length);
@@ -95,6 +100,14 @@ export function App({ dataSource, projectIntegration }: AppProps) {
   const handleClearSession = () => {
     void dataSource.clearSession().catch(() => dataSource.retryConnection());
   };
+  const handleImportExchange = (file: File) => {
+    void file.text().then((serialized) => {
+      const imported = parseExchangeImport(serialized);
+      if (!onImportedExchange) throw new Error("Exchange import is unavailable in this runtime.");
+      onImportedExchange(imported.exchange);
+      setImportError(null);
+    }).catch((error: unknown) => setImportError(error instanceof Error ? error.message : "The exchange could not be imported."));
+  };
   const openRecomposeMenu = (exchange: HttpExchange, x: number, y: number) => {
     selectExchange(getExchangeStoreKey(exchange));
     setRecomposeMenu({ exchange, x, y });
@@ -119,7 +132,7 @@ export function App({ dataSource, projectIntegration }: AppProps) {
   return (
     <AppErrorBoundary>
       <AppShell
-        toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} onClearSession={handleClearSession} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onThemeChange={setTheme} />}
+        toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} importError={importError} isImported={isImported} onClearSession={handleClearSession} onImportExchange={handleImportExchange} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onReturnToLiveCapture={() => onReturnToLiveCapture?.()} onThemeChange={setTheme} />}
         workspaceSwitch={workspaceSwitch}
         primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : <SequenceView onRecompose={openRecomposeMenu} />}
         inspector={<Inspector dataSource={dataSource} />}

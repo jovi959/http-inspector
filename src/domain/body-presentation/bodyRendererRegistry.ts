@@ -5,12 +5,12 @@ import type { HttpBody } from "@/generated/contracts";
 export type BodyView = "headers" | "json" | "xml" | "text" | "hex" | "raw";
 
 /** The registry keeps body-type growth open without forcing inspector-shell edits. */
-export function getAvailableBodyViews(body: HttpBody | null): readonly BodyView[] {
-  const text = getInlineText(body);
+export function getAvailableBodyViews(body: HttpBody | null, decodedText: string | null = getInlineText(body)): readonly BodyView[] {
+  const text = decodedText;
   if (!body?.content) return ["headers", "raw"];
+  if (isXmlCandidate(body.mediaType)) return ["headers", "xml", "text", "hex", "raw"];
   if (text === null) return ["headers", "hex", "raw"];
   if (isJsonCandidate(body.mediaType, text)) return ["headers", "json", "text", "hex", "raw"];
-  if (isXmlCandidate(body.mediaType)) return ["headers", "xml", "text", "hex", "raw"];
   return ["headers", "text", "hex", "raw"];
 }
 
