@@ -2,17 +2,21 @@ import { useEffect, useRef, useState } from "react";
 
 import { json } from "@codemirror/lang-json";
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { searchKeymap } from "@codemirror/search";
+import { search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import { keymap, lineNumbers, EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
 import { createJsonPresentation, requiresJsonWorker, type JsonPresentation } from "@/domain/body-presentation/jsonPresentation";
+import { findTextSearchMatches } from "@/domain/body-presentation/bodySearch";
+import { createResponseSearchHighlightEffect, responseSearchHighlighting } from "@/features/inspector/body/responseSearchHighlighting";
 
 interface JsonBodyViewerProps {
   readonly cacheKey: string;
   readonly content: string;
   readonly isComplete: boolean;
+  readonly searchMatchIndex?: number;
+  readonly searchQuery?: string;
 }
 
 const presentationCache = new Map<string, JsonPresentation>();
@@ -28,8 +32,9 @@ const charlesJsonHighlight = HighlightStyle.define([
 ]);
 
 /** Hosts the read-only JSON editor while retaining the immutable source for Copy Original. */
-export function JsonBodyViewer({ cacheKey, content, isComplete }: JsonBodyViewerProps) {
+export function JsonBodyViewer({ cacheKey, content, isComplete, searchMatchIndex = 0, searchQuery = "" }: JsonBodyViewerProps) {
   const editorElement = useRef<HTMLDivElement>(null);
+  const editorView = useRef<EditorView | null>(null);
   const [presentation, setPresentation] = useState<JsonPresentation | null>(() => getCachedPresentation(cacheKey, content));
   const [copied, setCopied] = useState<"original" | "pretty" | null>(null);
   const document = presentation?.kind === "valid" ? presentation.pretty : presentation?.original ?? content;
@@ -70,6 +75,8 @@ export function JsonBodyViewer({ cacheKey, content, isComplete }: JsonBodyViewer
           json(),
           foldGutter(),
           bracketMatching(),
+          search(),
+          responseSearchHighlighting,
           keymap.of([...foldKeymap, ...searchKeymap]),
           syntaxHighlighting(charlesJsonHighlight),
           EditorView.theme({
@@ -83,8 +90,21 @@ export function JsonBodyViewer({ cacheKey, content, isComplete }: JsonBodyViewer
         ],
       }),
     });
-    return () => view.destroy();
+    editorView.current = view;
+    return () => {
+      editorView.current = null;
+      view.destroy();
+    };
   }, [document]);
+
+  useEffect(() => {
+    const view = editorView.current;
+    if (!view) return;
+    const match = findTextSearchMatches(view.state.doc.toString(), searchQuery)[searchMatchIndex] ?? null;
+    view.dispatch({
+      effects: [createResponseSearchHighlightEffect(view.state.doc.toString(), searchQuery, searchMatchIndex), ...(match ? [EditorView.scrollIntoView(match.start, { y: "center" })] : [])],
+    });
+  }, [document, searchMatchIndex, searchQuery]);
 
   const copy = async (kind: "original" | "pretty") => {
     const copyText = kind === "original" ? content : presentation?.kind === "valid" && isComplete ? presentation.pretty : null;

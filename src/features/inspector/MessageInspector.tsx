@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
+import { findTextSearchMatches, getSearchMatchIndex } from "@/domain/body-presentation/bodySearch";
 import { getAvailableBodyViews, getInlineText, type BodyView } from "@/domain/body-presentation/bodyRendererRegistry";
+import { getHexPresentation, getHexSearchText } from "@/domain/body-presentation/hexPresentation";
 import { buildRawRequest, buildRawResponse } from "@/domain/raw-representation/buildRawMessage";
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
 import { AuthenticationViewer } from "@/features/inspector/authentication/AuthenticationViewer";
@@ -9,6 +11,7 @@ import { QueryParametersViewer } from "@/features/inspector/query/QueryParameter
 import { CodeBodyViewer } from "@/features/inspector/body/CodeBodyViewer";
 import { HexBodyViewer } from "@/features/inspector/body/HexBodyViewer";
 import { MessageBodyToolbar } from "@/features/inspector/body/MessageBodyToolbar";
+import { ResponseSearchToolbar } from "@/features/inspector/body/ResponseSearchToolbar";
 import { useCapturedBody } from "@/features/inspector/body/useCapturedBody";
 import { useBodyTextPresentation } from "@/features/inspector/body/useBodyTextPresentation";
 import type { ExchangeKey, HttpRequest, HttpResponse } from "@/generated/contracts";
@@ -42,16 +45,30 @@ export function MessageInspector({ bodyRevision, dataSource, exchangeKey, messag
     return query.length > 0 ? [...messageViews.slice(0, 2), "query", ...messageViews.slice(2)] : messageViews;
   }, [bodyResult.body, bodyTextResult.text, query.length]);
   const [activeView, setActiveView] = useState<MessageView>(availableViews.includes("json") ? "json" : availableViews.includes("xml") ? "xml" : "headers");
+  const [responseSearchQuery, setResponseSearchQuery] = useState("");
+  const [responseSearchMatchIndex, setResponseSearchMatchIndex] = useState(0);
   const bodyText = bodyTextResult.text ?? getBodyPlaceholder(bodyResult.body?.availability ?? "notApplicable");
   const raw = getRawPresentation(message, bodyResult.body, rawResult.body, title, rawFidelity);
+  const searchContent = useMemo(() => {
+    if (activeView === "raw") return raw.content;
+    if (activeView === "hex") return getHexSearchText(getHexPresentation(rawResult.body ?? bodyResult.body).bytes);
+    return bodyText;
+  }, [activeView, bodyResult.body, bodyText, raw.content, rawResult.body]);
+  const responseSearchMatches = useMemo(() => findTextSearchMatches(searchContent, responseSearchQuery), [responseSearchQuery, searchContent]);
+  const activeResponseSearchMatch = responseSearchMatches.length === 0 ? 0 : responseSearchMatchIndex % responseSearchMatches.length;
+  const showsResponseSearch = title === "Response" && !["authentication", "headers", "query"].includes(activeView);
 
   useEffect(() => {
     if (!availableViews.includes(activeView)) setActiveView(availableViews[0] ?? "headers");
   }, [activeView, availableViews]);
 
+  useEffect(() => setResponseSearchMatchIndex(0), [activeView, responseSearchQuery, searchContent]);
+  useEffect(() => setResponseSearchQuery(""), [exchangeKey]);
+
   return (
     <section className="message-inspector">
       <div className="message-heading"><span>{title}</span><span>{message.body?.mediaType ?? "No content type"}</span></div>
+      {showsResponseSearch && <ResponseSearchToolbar activeMatch={activeResponseSearchMatch} matchCount={responseSearchMatches.length} onChange={setResponseSearchQuery} onNavigate={(direction) => setResponseSearchMatchIndex((current) => getSearchMatchIndex(current, responseSearchMatches.length, direction))} value={responseSearchQuery} />}
       {activeView !== "query" && activeView !== "headers" && activeView !== "authentication" && <MessageBodyToolbar body={activeView === "raw" ? (rawResult.body ?? bodyResult.body) : bodyResult.body} decodedCharset={activeView === "raw" || !bodyTextResult.isDecoded || bodyResult.body?.charset !== null ? null : "UTF-8 (inferred)"} rawFidelity={activeView === "raw" ? raw.fidelity : null} />}
       <div className="message-content">
         {bodyResult.isLoading && <p className="body-load-state">Loading captured body…</p>}
@@ -61,13 +78,13 @@ export function MessageInspector({ bodyRevision, dataSource, exchangeKey, messag
         {activeView === "headers" && <HeadersViewer headers={message.headers} />}
         {activeView === "authentication" && <AuthenticationViewer headers={message.headers} />}
         {activeView === "query" && <QueryParametersViewer query={query} />}
-        {activeView === "json" && <Suspense fallback={<p className="empty-copy">Loading JSON viewer…</p>}><JsonBodyViewer cacheKey={`${title}:${bodyRevision}`} content={bodyText} isComplete={bodyResult.isComplete && bodyResult.body?.availability !== "truncated"} /></Suspense>}
-        {activeView === "xml" && <Suspense fallback={<p className="empty-copy">Loading XML viewer…</p>}><XmlBodyViewer content={bodyText} /></Suspense>}
-        {activeView === "text" && availableViews.includes("json") && <Suspense fallback={<p className="empty-copy">Loading JSON viewer…</p>}><JsonBodyViewer cacheKey={`${title}:${bodyRevision}:text`} content={bodyText} isComplete={bodyResult.isComplete && bodyResult.body?.availability !== "truncated"} /></Suspense>}
-        {activeView === "text" && availableViews.includes("xml") && <Suspense fallback={<p className="empty-copy">Loading XML viewer…</p>}><XmlBodyViewer content={bodyText} /></Suspense>}
-        {activeView === "text" && !availableViews.includes("json") && !availableViews.includes("xml") && <CodeBodyViewer content={bodyText} />}
-        {activeView === "hex" && <HexBodyViewer body={rawResult.body ?? bodyResult.body} />}
-        {activeView === "raw" && <CodeBodyViewer content={raw.content} preserveHttpLines />}
+        {activeView === "json" && <Suspense fallback={<p className="empty-copy">Loading JSON viewer…</p>}><JsonBodyViewer cacheKey={`${title}:${bodyRevision}`} content={bodyText} isComplete={bodyResult.isComplete && bodyResult.body?.availability !== "truncated"} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} /></Suspense>}
+        {activeView === "xml" && <Suspense fallback={<p className="empty-copy">Loading XML viewer…</p>}><XmlBodyViewer content={bodyText} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} /></Suspense>}
+        {activeView === "text" && availableViews.includes("json") && <Suspense fallback={<p className="empty-copy">Loading JSON viewer…</p>}><JsonBodyViewer cacheKey={`${title}:${bodyRevision}:text`} content={bodyText} isComplete={bodyResult.isComplete && bodyResult.body?.availability !== "truncated"} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} /></Suspense>}
+        {activeView === "text" && availableViews.includes("xml") && <Suspense fallback={<p className="empty-copy">Loading XML viewer…</p>}><XmlBodyViewer content={bodyText} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} /></Suspense>}
+        {activeView === "text" && !availableViews.includes("json") && !availableViews.includes("xml") && <CodeBodyViewer content={bodyText} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} />}
+        {activeView === "hex" && <HexBodyViewer body={rawResult.body ?? bodyResult.body} searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} />}
+        {activeView === "raw" && <CodeBodyViewer content={raw.content} preserveHttpLines searchMatchIndex={activeResponseSearchMatch} searchQuery={responseSearchQuery} />}
       </div>
       <nav className="body-view-tabs" aria-label={`${title} representations`}>
         {availableViews.map((view) => (
