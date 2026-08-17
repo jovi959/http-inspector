@@ -151,7 +151,8 @@ public static class HttpClientCaptureMapper
             response.Content,
             maximumBodyBytes,
             body => completed(captured with { Body = body.Body, Raw = body.Raw }),
-            (body, exception) => failed(captured with { Body = body.Body, Raw = body.Raw }, exception));
+            (body, exception) => failed(captured with { Body = body.Body, Raw = body.Raw }, exception),
+            HeaderValue(response.Headers, "Content-Encoding"));
     }
 
     private static IReadOnlyList<CapturedHeader> Headers(HttpHeaders headers, HttpContentHeaders? contentHeaders)
@@ -176,6 +177,9 @@ public static class HttpClientCaptureMapper
             }
         }
     }
+
+    private static string? HeaderValue(HttpHeaders headers, string name) =>
+        headers.TryGetValues(name, out var values) ? string.Join(",", values) : null;
 
     private static IReadOnlyList<CapturedQuery> Query(Uri? uri)
     {

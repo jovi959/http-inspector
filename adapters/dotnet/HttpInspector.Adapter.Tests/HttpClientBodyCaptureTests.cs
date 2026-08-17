@@ -28,7 +28,8 @@ public sealed class HttpClientBodyCaptureTests
             Content = new StringContent("{\"id\":42}", Encoding.UTF8, "application/json"),
         };
 
-        await invoker.SendAsync(request, CancellationToken.None);
+        var returned = await invoker.SendAsync(request, CancellationToken.None);
+        await returned.Content.ReadAsByteArrayAsync();
         var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
         var capturedBody = started["request"]!["body"]!;
 
@@ -123,6 +124,35 @@ public sealed class HttpClientBodyCaptureTests
         Assert.Equal("inlineBase64", capturedRaw["content"]!["kind"]!.GetValue<string>());
         Assert.Equal(compressed, Convert.FromBase64String(capturedRaw["content"]!["value"]!.GetValue<string>()));
         Assert.Equal("gzip", capturedRaw["contentEncoding"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task FID_019_transparently_decoded_gzip_xml_is_readable_when_encoded_length_differs()
+    {
+        const string xml = "<?xml version=\"1.0\"?><Envelope><Result>already decoded</Result></Envelope>";
+        var transport = new FakeCaptureTransport();
+        await using var adapter = await StartAdapterAsync(transport);
+        using var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes(xml)),
+        };
+        response.Content.Headers.ContentType = new("text/xml") { CharSet = "utf-8" };
+        response.Content.Headers.ContentLength = 512;
+        response.Content.Headers.ContentEncoding.Add("gzip");
+        response.Headers.TryAddWithoutValidation("Content-Encoding", "gzip");
+        using var invoker = CreatePipeline(adapter, _ => Task.FromResult(response));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.test/v1/soap-transparent");
+
+        var returned = await invoker.SendAsync(request, CancellationToken.None);
+        await returned.Content.ReadAsByteArrayAsync();
+        await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var capturedBody = completed["response"]!["body"]!;
+
+        Assert.Equal("captured", capturedBody["availability"]!.GetValue<string>());
+        Assert.Equal(xml, capturedBody["content"]!["value"]!.GetValue<string>());
+        Assert.Null(capturedBody["contentEncoding"]);
+        Assert.Equal("gzip", completed["response"]!["raw"]!["contentEncoding"]!.GetValue<string>());
     }
 
     [Fact]

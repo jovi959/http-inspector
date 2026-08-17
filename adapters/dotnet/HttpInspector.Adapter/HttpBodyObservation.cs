@@ -50,7 +50,7 @@ internal sealed class HttpBodyObservationState
                 }
             }
 
-            if (_metadata.DeclaredByteLength is long declaredByteLength && _observedByteLength >= declaredByteLength)
+            if (HasComparableDeclaredLength && _metadata.DeclaredByteLength is long declaredByteLength && _observedByteLength >= declaredByteLength)
             {
                 terminalBody = FinishLocked(_observedByteLength == declaredByteLength && _buffer is not null
                     ? Captured(_buffer.ToArray())
@@ -71,7 +71,7 @@ internal sealed class HttpBodyObservationState
         {
             body = FinishLocked(_buffer is null
                 ? Unavailable()
-                : _metadata.DeclaredByteLength is long declaredByteLength && _observedByteLength != declaredByteLength
+                : HasComparableDeclaredLength && _metadata.DeclaredByteLength is long declaredByteLength && _observedByteLength != declaredByteLength
                     ? Unavailable()
                     : _observedByteLength == 0
                     ? Empty()
@@ -153,6 +153,8 @@ internal sealed class HttpBodyObservationState
     private ObservedCapturedBody Empty() => new(_metadata.Empty());
 
     private ObservedCapturedBody Unavailable() => new(_metadata.Unavailable());
+
+    private bool HasComparableDeclaredLength => !_captureResponseBody || string.IsNullOrWhiteSpace(_metadata.ContentEncoding);
 }
 
 internal sealed class ObservingReadStream(Stream inner, HttpBodyObservationState state) : Stream
@@ -271,10 +273,12 @@ internal sealed record HttpBodyMetadata(
     string? ContentEncoding,
     long? DeclaredByteLength)
 {
-    public static HttpBodyMetadata From(HttpContentHeaders headers) => new(
+    public static HttpBodyMetadata From(HttpContentHeaders headers, string? responseContentEncoding = null) => new(
         headers.ContentType?.MediaType,
         headers.ContentType?.CharSet,
-        headers.ContentEncoding.Count == 0 ? null : string.Join(",", headers.ContentEncoding),
+        string.IsNullOrWhiteSpace(responseContentEncoding)
+            ? headers.ContentEncoding.Count == 0 ? null : string.Join(",", headers.ContentEncoding)
+            : responseContentEncoding,
         headers.ContentLength);
 
     public CapturedBody Empty() => CapturedBody.Empty(MediaType, Charset, ContentEncoding);
@@ -305,8 +309,23 @@ internal sealed record HttpBodyMetadata(
     public ObservedCapturedBody CapturedResponse(byte[] bytes, ulong maximumBodyBytes)
     {
         var raw = Captured(bytes);
-        if (string.IsNullOrWhiteSpace(ContentEncoding) || !TryDecodeContentEncoding(bytes, maximumBodyBytes, out var decoded))
+        if (string.IsNullOrWhiteSpace(ContentEncoding))
         {
+            return new ObservedCapturedBody(raw);
+        }
+
+        if (!TryDecodeContentEncoding(bytes, maximumBodyBytes, out var decoded))
+        {
+            // Some HttpMessageHandler implementations transparently decompress the
+            // stream while retaining Content-Encoding on the response headers. In
+            // that case the bytes are already readable; do not turn them into a
+            // binary-only body just because a second decode is impossible.
+            if (IsTextMediaType(MediaType) && IsValidText(bytes))
+            {
+                var transportDecoded = (this with { ContentEncoding = null }).Captured(bytes);
+                return new ObservedCapturedBody(transportDecoded, raw);
+            }
+
             return new ObservedCapturedBody(raw);
         }
 
@@ -395,6 +414,20 @@ internal sealed record HttpBodyMetadata(
     {
         var encoding = CapturedBody.GetEncoding(charset);
         return Encoding.GetEncoding(encoding.CodePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+    }
+
+    private bool IsValidText(byte[] bytes)
+    {
+        try
+        {
+            var encoding = StrictEncoding(Charset);
+            var text = encoding.GetString(bytes);
+            return encoding.GetBytes(text).AsSpan().SequenceEqual(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
     }
 
     private static readonly HashSet<string> TextMediaTypes = new(StringComparer.OrdinalIgnoreCase)

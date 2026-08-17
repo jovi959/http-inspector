@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
 import { getInlineText } from "@/domain/body-presentation/bodyRendererRegistry";
 import { createDataverseResponseRecords, renderDataverseClassDiagram } from "@/domain/dataverse/dataverseMap";
+import { createDataverseMapRenderSequence } from "@/domain/dataverse/dataverseMapRenderSequence";
 import type { DataverseMap } from "@/domain/dataverse/dataverseMap";
 import { useCapturedBody } from "@/features/inspector/body/useCapturedBody";
 import { decorateDataverseDiagramValues } from "@/features/inspector/dataverse/decorateDataverseDiagramValues";
@@ -39,6 +40,7 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
   const diagramContainer = useRef<HTMLDivElement>(null);
   const dragState = useRef<DragState | null>(null);
   const diagramId = useId().replaceAll(":", "");
+  const renderSequence = useRef(createDataverseMapRenderSequence(`dataverse-map-${diagramId}`));
   const [diagramRevision, setDiagramRevision] = useState(0);
   const [isMaximized, setIsMaximized] = useState(false);
   const [recordIndex, setRecordIndex] = useState(-1);
@@ -57,6 +59,7 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
 
   useEffect(() => {
     let disposed = false;
+    const renderRequest = renderSequence.current.begin();
     const source = renderDataverseClassDiagram(map, record);
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
@@ -64,8 +67,9 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
       try {
         const { default: mermaid } = await import("mermaid");
         mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: isDark ? "dark" : "default" });
-        const { svg } = await mermaid.render(`dataverse-map-${diagramId}`, source);
-        if (!disposed && diagramContainer.current) {
+        const detachedContainer = document.createElement("div");
+        const { svg } = await mermaid.render(renderRequest.id, source, detachedContainer);
+        if (!disposed && renderSequence.current.isLatest(renderRequest) && diagramContainer.current) {
           diagramContainer.current.innerHTML = svg;
           const renderedDiagram = diagramContainer.current.querySelector("svg");
           if (renderedDiagram) decorateDataverseDiagramValues(renderedDiagram);
@@ -73,13 +77,13 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
           setRenderError(null);
         }
       } catch {
-        if (!disposed) setRenderError("The Dataverse Map could not be rendered for this request.");
+        if (!disposed && renderSequence.current.isLatest(renderRequest)) setRenderError("The Dataverse Map could not be rendered for this request.");
       }
     }
 
     void renderDiagram();
     return () => { disposed = true; };
-  }, [diagramId, map, record, theme]);
+  }, [map, record, theme]);
 
   useEffect(() => {
     const svg = diagramContainer.current?.querySelector("svg");
@@ -156,7 +160,8 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
           <button type="button" onClick={resetViewport}>Reset</button>
         </div>
       </div>
-      {renderError ? <p className="dataverse-map-error">{renderError}</p> : <div ref={diagramContainer} className="dataverse-map-canvas" onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={zoomWithWheel} />}
+      {renderError && <p className="dataverse-map-error">{renderError}</p>}
+      <div ref={diagramContainer} className="dataverse-map-canvas" onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={zoomWithWheel} />
     </section>
   );
 }

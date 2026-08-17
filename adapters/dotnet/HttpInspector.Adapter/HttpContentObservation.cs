@@ -43,8 +43,9 @@ internal static class HttpContentObservation
         HttpContent content,
         ulong maximumBodyBytes,
         Action<ObservedCapturedBody> completed,
-        Action<ObservedCapturedBody, Exception> failed) =>
-        new ObservedHttpContent(content, new HttpBodyObservationState(HttpBodyMetadata.From(content.Headers), maximumBodyBytes, completed, failed, captureResponseBody: true));
+        Action<ObservedCapturedBody, Exception> failed,
+        string? responseContentEncoding = null) =>
+        new ObservedHttpContent(content, new HttpBodyObservationState(HttpBodyMetadata.From(content.Headers, responseContentEncoding), maximumBodyBytes, completed, failed, captureResponseBody: true));
 
     public static HttpContent WrapRequest(
         HttpContent content,

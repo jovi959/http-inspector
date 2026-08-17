@@ -4,10 +4,12 @@ import { describe, expect, test } from "vitest";
 
 import { createDataverseMap, createDataverseResponseRecords, isDataverseRequest, renderDataverseClassDiagram } from "./dataverseMap";
 import { getDataverseDiagramValueKind } from "./dataverseDiagramValueStyle";
+import { createDataverseMapRenderSequence } from "./dataverseMapRenderSequence";
 import { createDataverseRecordValuePresentation } from "./dataverseRecordValuePresentation";
 
 const requestUrl = readFixture("odata-incidents.url");
 const actionRequestUrl = readFixture("odata-incidents-action-request.url");
+const recordNavigationResponse = readFixture("odata-record-navigation-response.json");
 const expectedDiagram = readFixture("odata-incidents.mmd", false);
 
 describe("Dataverse Map", () => {
@@ -88,6 +90,32 @@ describe("Dataverse Map", () => {
     expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Northwind&quot;");
     expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_schedule_id = &quot;work-1&quot;");
     expect(renderDataverseClassDiagram(map!, response.records[0])).toContain("        field_name = &quot;Construction&quot;");
+  });
+
+  test("renders the first returned record for each expanded collection deterministically", () => {
+    const response = createDataverseResponseRecords(recordNavigationResponse);
+    const map = createDataverseMap({ method: "GET", url: actionRequestUrl });
+    const diagram = renderDataverseClassDiagram(map!, response.records[4]);
+
+    expect(response.error).toBeNull();
+    expect(response.records).toHaveLength(7);
+    expect(response.records).toEqual(expect.arrayContaining([expect.objectContaining({ relation_request: expect.objectContaining({ field_request_id: "request-5" }) })]));
+    expect(diagram).toContain("        field_workflow_id = &quot;workflow-5a&quot;");
+    expect(diagram).not.toContain("        field_workflow_id = &quot;workflow-5b&quot;");
+    expect(diagram).toContain("        field_center_number = &quot;CENTER-5&quot;");
+  });
+
+  test("keeps only the newest Mermaid render request eligible to update the diagram", () => {
+    const renderSequence = createDataverseMapRenderSequence("dataverse-map-test");
+    const originalMap = renderSequence.begin();
+    const fifthRecord = renderSequence.begin();
+    const seventhRecord = renderSequence.begin();
+
+    expect(originalMap.id).not.toBe(fifthRecord.id);
+    expect(fifthRecord.id).not.toBe(seventhRecord.id);
+    expect(renderSequence.isLatest(originalMap)).toBe(false);
+    expect(renderSequence.isLatest(fifthRecord)).toBe(false);
+    expect(renderSequence.isLatest(seventhRecord)).toBe(true);
   });
 
   test("presents captured JSON values with their original JSON type", () => {

@@ -86,7 +86,7 @@ function uniqueClassId(candidate: string, usedIds: ReadonlySet<string>): string 
 }
 
 function renderExpansion(node: ExpansionNode, parentRecord: DataverseRecord | null): readonly string[] {
-  const record = getExpansionRecord(parentRecord, node.expansion.name);
+  const record = firstReturnedExpansionRecord(parentRecord, node.expansion.name);
   const classLines = renderClass(node.id, node.expansion.name, node.expansion.selectedColumns, record);
   return [...classLines, ...node.children.flatMap((child) => ["", ...renderExpansion(child, record)])];
 }
@@ -106,7 +106,7 @@ function renderClass(id: string, label: string, columns: readonly string[], reco
   return [`    class ${id} {`, ...members.map((member) => `        ${member}`), "    }"];
 }
 
-function getExpansionRecord(parentRecord: DataverseRecord | null, relationship: string): DataverseRecord | null {
+function firstReturnedExpansionRecord(parentRecord: DataverseRecord | null, relationship: string): DataverseRecord | null {
   if (!parentRecord) return null;
   const value = parentRecord[relationship];
   if (isDataverseRecord(value)) return value;
