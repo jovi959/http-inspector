@@ -116,7 +116,7 @@ function firstReturnedExpansionRecord(parentRecord: DataverseRecord | null, rela
 
 function renderMember(column: string, record: DataverseRecord | null): string {
   if (!record) return escapeMember(column);
-  return `${escapeMember(column)} = ${escapeMember(createDataverseRecordValuePresentation(record[column]).text)}`;
+  return `${escapeMember(column)} = ${escapeMemberValue(createDataverseRecordValuePresentation(record[column]).text)}`;
 }
 
 function isDataverseRecord(value: DataverseRecordValue | undefined): value is DataverseRecord {
@@ -136,4 +136,9 @@ function escapeMember(value: string): string {
   const member = value.replaceAll("\r", " ").replaceAll("\n", " ").replaceAll("{", "(").replaceAll("}", ")").trim();
   if (member.startsWith("\"") && member.endsWith("\"")) return `'${member.slice(1, -1).replaceAll("\\\"", "“")}'`;
   return member || "(empty)";
+}
+
+function escapeMemberValue(value: string): string {
+  // Mermaid parses ASCII colons in `Class : member` declarations as grammar tokens.
+  return escapeMember(value).replaceAll(":", "ː");
 }

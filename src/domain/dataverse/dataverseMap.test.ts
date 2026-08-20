@@ -144,6 +144,20 @@ describe("Dataverse Map", () => {
     expect(getDataverseDiagramValueKind("not returned")).toBeNull();
   });
 
+  test("renders time values in aliased classes without Mermaid control colons", () => {
+    const diagram = renderDataverseClassDiagram({
+      requestLabel: "GET /saas/d365/v9.2/sample_records",
+      entityName: "sample_records",
+      selectedColumns: [],
+      filters: [],
+      expansions: [{ name: "bpf_workflow", selectedColumns: ["modifiedon"], expansions: [] }],
+    }, {
+      bpf_workflow: { modifiedon: "2026-07-30T19:29:52Z" },
+    });
+
+    expect(diagram).toContain("BPF : modifiedon = '2026-07-30T19ː29ː52Z'");
+  });
+
   test("reports malformed and non-collection Dataverse response content without inventing records", () => {
     expect(createDataverseResponseRecords("not json")).toMatchObject({ records: [], error: "The captured response is not valid JSON." });
     expect(createDataverseResponseRecords(JSON.stringify({ field_title: "single record" }))).toMatchObject({ records: [], error: "The captured response does not contain an OData value array." });
