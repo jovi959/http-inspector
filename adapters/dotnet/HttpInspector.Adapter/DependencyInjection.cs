@@ -17,6 +17,8 @@ public sealed class HttpInspectorOptions
     public string? BaseUrl { get; set; }
     public JsonObject SourceMetadata { get; set; } = [];
     public int QueueCapacity { get; set; } = 256;
+    public int DatabaseQueueCapacity { get; set; } = 128;
+    public ulong MaximumDatabaseCaptureBytes { get; set; } = 1024UL * 1024UL;
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     internal AdapterConfig ToAdapterConfig() => new()
@@ -30,6 +32,8 @@ public sealed class HttpInspectorOptions
         BaseUrl = BaseUrl,
         SourceMetadata = SourceMetadata,
         QueueCapacity = QueueCapacity,
+        DatabaseQueueCapacity = DatabaseQueueCapacity,
+        MaximumDatabaseCaptureBytes = MaximumDatabaseCaptureBytes,
         HeartbeatInterval = HeartbeatInterval,
     };
 }
@@ -45,6 +49,7 @@ public static class HttpInspectorServiceCollectionExtensions
         services.TryAddTransient<HttpInspectorHandler>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter, HttpInspectorMessageHandlerBuilderFilter>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SystemNetHttpDiagnosticBridge>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SqlClientDiagnosticBridge>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, HttpInspectorHostedService>());
         return services;
     }

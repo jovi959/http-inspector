@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::{AtomicU32, Ordering}};
 
 use axum::{Router, routing::{any, get, post}};
-use inspector_core::{application::CaptureHub, domain::{CaptureUiDelta, HttpBody}};
+use inspector_core::{application::CaptureHub, domain::{CaptureUiDelta, DatabaseCommand, DatabaseCommandKey, DatabaseCommandSummary, DatabaseUiDelta, HttpBody}};
 use tokio::{net::TcpListener, sync::{broadcast, mpsc, oneshot}, task::JoinHandle};
 
 use crate::{ReplayExecutionReceipt, ReplayRequest, ServerConfig, dev_api, ingress::{capture_socket, queue::{CaptureDiagnostics, QueuedCapture, SharedDiagnostics, process_capture_queue}}, project_integration_api, replay::ReplayService};
@@ -13,6 +13,7 @@ pub(crate) struct ServerState {
     pub maximum_message_bytes: usize,
     pub maximum_body_bytes: u64,
     pub ui_events: broadcast::Sender<Vec<inspector_core::domain::CaptureUiDelta>>,
+    pub database_ui_events: broadcast::Sender<Vec<DatabaseUiDelta>>,
     pub connected_sources: Arc<AtomicU32>,
     pub diagnostics: SharedDiagnostics,
     pub ingest_queue: mpsc::Sender<QueuedCapture>,
@@ -39,6 +40,9 @@ pub struct CaptureServerStatus {
     pub dropped_count: u64,
     pub rejected_count: u64,
     pub retention_blocked_by_in_flight: bool,
+    pub database_command_count: usize,
+    pub database_retained_bytes: u64,
+    pub database_retention_blocked_by_in_flight: bool,
 }
 
 impl RunningServer {
@@ -62,6 +66,9 @@ impl RunningServer {
             dropped_count: self.state.diagnostics.dropped_count(),
             rejected_count: self.state.diagnostics.rejected_count(),
             retention_blocked_by_in_flight: status.retention_blocked_by_in_flight,
+            database_command_count: status.database_command_count,
+            database_retained_bytes: status.database_retained_bytes,
+            database_retention_blocked_by_in_flight: status.database_retention_blocked_by_in_flight,
         }
     }
 
@@ -73,6 +80,16 @@ impl RunningServer {
     /// Retrieves a selected detail on demand so capture bodies stay out of hot-path deltas.
     pub fn exchange(&self, key: &inspector_core::domain::ExchangeKey) -> Option<inspector_core::domain::HttpExchange> {
         self.state.hub.exchange(key)
+    }
+
+    /// Projects database command summaries for the separate database workspace.
+    pub fn database_snapshot(&self) -> Vec<DatabaseCommandSummary> {
+        self.state.hub.database_snapshot()
+    }
+
+    /// Retrieves SQL command detail only after a database item is selected.
+    pub fn database_command(&self, key: &DatabaseCommandKey) -> Option<DatabaseCommand> {
+        self.state.hub.database_command(key)
     }
 
     /// Reads a captured body or raw descriptor only when a detail consumer asks for it.
@@ -97,11 +114,17 @@ impl RunningServer {
     pub fn clear_session(&self) {
         let session_id = self.state.hub.clear_session();
         let _ = self.state.ui_events.send(vec![CaptureUiDelta::Reset { session_id, summaries: Vec::new() }]);
+        let _ = self.state.database_ui_events.send(vec![DatabaseUiDelta::Reset { session_id: self.state.hub.status().session_id, summaries: Vec::new() }]);
     }
 
     /// Creates an ordered UI subscriber for a single webview or hosted browser client.
     pub fn subscribe_ui_events(&self) -> broadcast::Receiver<Vec<CaptureUiDelta>> {
         self.state.ui_events.subscribe()
+    }
+
+    /// Creates an ordered database-workspace subscriber independent from HTTP UI traffic.
+    pub fn subscribe_database_ui_events(&self) -> broadcast::Receiver<Vec<DatabaseUiDelta>> {
+        self.state.database_ui_events.subscribe()
     }
 
     /// Schedules an explicit replay and returns the key of its recorded in-flight exchange.
@@ -115,15 +138,17 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer, std::io::Error
     let listener = TcpListener::bind(config.bind_address).await?;
     let address = listener.local_addr()?;
     let (ui_events, _) = broadcast::channel(256);
+    let (database_ui_events, _) = broadcast::channel(128);
     let hub = CaptureHub::new(config.repository_limits);
     let replay = ReplayService::new(hub.clone(), ui_events.clone(), config.maximum_body_bytes).map_err(std::io::Error::other)?;
     let (ingest_queue, receiver) = mpsc::channel(512);
-    let processor = tokio::spawn(process_capture_queue(hub.clone(), ui_events.clone(), receiver));
+    let processor = tokio::spawn(process_capture_queue(hub.clone(), ui_events.clone(), database_ui_events.clone(), receiver));
     let state = ServerState {
         hub,
         maximum_message_bytes: config.maximum_message_bytes,
         maximum_body_bytes: config.maximum_body_bytes,
         ui_events,
+        database_ui_events,
         connected_sources: Arc::new(AtomicU32::new(0)),
         diagnostics: Arc::new(CaptureDiagnostics::default()),
         ingest_queue,
@@ -134,10 +159,13 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer, std::io::Error
         .route("/api/status", get(dev_api::status))
         .route("/api/exchanges", get(dev_api::exchanges))
         .route("/api/exchanges/{source_instance_id}/{exchange_id}", get(dev_api::exchange))
+        .route("/api/database/commands", get(dev_api::database_commands))
+        .route("/api/database/commands/{source_instance_id}/{command_id}", get(dev_api::database_command))
         .route("/api/recording", post(dev_api::set_recording))
         .route("/api/clear", post(dev_api::clear_session))
         .route("/api/replay", post(dev_api::replay))
         .route("/ws/ui", any(dev_api::ui_socket))
+        .route("/ws/database-ui", any(dev_api::database_ui_socket))
         .with_state(state.clone());
     if config.project_integration_local && address.ip().is_loopback() {
         router = router.merge(project_integration_api::router(config.project_integration_state_root.clone(), loopback_capture_endpoint(address)));

@@ -204,11 +204,24 @@ public sealed class WebSocketCaptureTransport : ICaptureTransport
         {
             case "hello.accepted":
                 var value = message["value"]?.AsObject() ?? throw new CaptureTransportException("protocolMismatch", "The listener acceptance was missing its value.", false);
+                var acceptedCapabilities = new HashSet<string>(StringComparer.Ordinal);
+                if (value["acceptedCapabilities"] is JsonArray capabilities)
+                {
+                    foreach (var capability in capabilities)
+                    {
+                        if (capability?.GetValue<string>() is { Length: > 0 } valueName)
+                        {
+                            acceptedCapabilities.Add(valueName);
+                        }
+                    }
+                }
+
                 _hello?.TrySetResult(new NegotiatedSession(
                     value["connectionId"]!.GetValue<string>(),
                     value["sessionId"]!.GetValue<string>(),
                     value["maximumMessageBytes"]!.GetValue<ulong>(),
-                    value["maximumBodyBytes"]!.GetValue<ulong>()));
+                    value["maximumBodyBytes"]!.GetValue<ulong>(),
+                    acceptedCapabilities));
                 break;
             case "hello.error":
                 var helloError = message["value"]?.AsObject() ?? throw new CaptureTransportException("protocolMismatch", "The listener rejection was missing its value.", false);

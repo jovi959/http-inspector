@@ -1,6 +1,6 @@
 # HTTP Inspector .NET adapter test manifest
 
-adapter: `HttpInspector.Adapter` 1.3.3
+adapter: `HttpInspector.Adapter` 1.4.0
 runtime: .NET 10
 httpClient: `IHttpClientFactory` / Refit / direct `HttpClient` / direct RestSharp / WCF (`Microsoft.Extensions.Http` 10.x)
 transportProfiles: `[websocket-v1]`
@@ -77,6 +77,9 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | DMC-005 | `HttpInspectorWcfTests.WCF_001_attach_is_idempotent_for_generated_client_base_types`, `HttpInspectorWcfTests.WCF_002_attach_rejects_a_client_that_is_no_longer_in_the_created_state` | pass |
 | DMC-006 | WCF message-inspector contract and reachable non-HTTP endpoint are not yet live-proven | pendingLiveEndpoint |
 | DMC-007 | 2026-08-16 disposable v4 project: `pre-run.sh`, `dotnet build`, `post-run.sh`, and SHA-256 equality before/after | pass |
+| DB-001 | `DatabaseCaptureTests.DB_001_sql_command_lifecycle_is_sent_when_the_listener_accepts_database_capture` | pass |
+| DB-002 | `DatabaseCaptureTests.DB_002_database_capture_is_not_sent_when_the_listener_does_not_advertise_the_capability` | pass |
+| DB-003 | `DatabaseCaptureTests.DB_003_database_queue_pressure_does_not_block_http_capture` | pass |
 | INT-001 | `ListenerContractTests.INT_001_valid_hello_start_and_completion_are_acknowledged_and_stored_as_one_completed_exchange` | pass |
 | INT-002 | `ListenerContractTests.INT_002_identical_requests_completed_in_reverse_order_remain_two_distinct_exchanges` | pass |
 | INT-003 | `ListenerContractTests.INT_003_source_mismatch_returns_message_error` | pass |

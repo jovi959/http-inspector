@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 
 use inspector_core::{
     application::{CaptureHub, HubMutation},
-    domain::{CaptureMessage, CaptureSource, CaptureUiDelta, ModelValidationError},
+    domain::{CaptureMessage, CaptureSource, CaptureUiDelta, DatabaseUiDelta, ModelValidationError},
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -32,14 +32,18 @@ pub(crate) struct QueuedCapture {
 pub(crate) async fn process_capture_queue(
     hub: CaptureHub,
     ui_events: broadcast::Sender<Vec<CaptureUiDelta>>,
+    database_ui_events: broadcast::Sender<Vec<DatabaseUiDelta>>,
     mut receiver: mpsc::Receiver<QueuedCapture>,
 ) {
     while let Some(queued) = receiver.recv().await {
         let result = hub.ingest(&queued.source, &queued.received_at, queued.message);
-        if let Ok(mutation) = &result
-            && mutation.changed
-        {
-            let _ = ui_events.send(mutation.deltas.clone());
+        if let Ok(mutation) = &result && mutation.changed {
+            if !mutation.deltas.is_empty() {
+                let _ = ui_events.send(mutation.deltas.clone());
+            }
+            if !mutation.database_deltas.is_empty() {
+                let _ = database_ui_events.send(mutation.database_deltas.clone());
+            }
         }
         let _ = queued.completion.send(result);
     }

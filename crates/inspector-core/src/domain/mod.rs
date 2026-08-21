@@ -1,6 +1,7 @@
 //! Canonical types shared by all capture transports and presentation surfaces.
 
 mod capture_message;
+mod database_command;
 mod exchange_summary;
 mod http_exchange;
 mod validation;
@@ -8,6 +9,11 @@ mod validation;
 pub use capture_message::{
     CaptureMessage, CaptureUiDelta, ClientHello, HelloAccepted, HelloError, ProtocolRange,
     ServerMessage,
+};
+pub use database_command::{
+    DatabaseCaptureAvailability, DatabaseCommand, DatabaseCommandFailure, DatabaseCommandKey,
+    DatabaseCommandSummary, DatabaseParameter, DatabaseParameterCapture, DatabaseQueryCapture,
+    DatabaseResultAvailability, DatabaseUiDelta,
 };
 pub use exchange_summary::HttpExchangeSummary;
 pub use http_exchange::{

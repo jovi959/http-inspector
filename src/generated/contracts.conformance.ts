@@ -8,6 +8,11 @@ export function assertExhaustiveCaptureMessage(message: CaptureMessage): void {
     case "exchange.failed":
     case "exchange.cancelled":
     case "exchange.snapshot":
+    case "database.command.started":
+    case "database.command.completed":
+    case "database.command.failed":
+    case "database.command.cancelled":
+    case "database.command.snapshot":
     case "heartbeat":
       return;
     default: {

@@ -9,7 +9,7 @@ public static class HttpInspectorProtocol
     public const string DefaultEndpoint = "ws://127.0.0.1:53662/v1/capture";
     public const string TransportProfile = "websocket-v1";
     public const string AdapterName = "http-inspector-dotnet-httpclient";
-    public const string AdapterVersion = "1.3.3";
+    public const string AdapterVersion = "1.4.0";
 }
 
 public sealed class AdapterConfig
@@ -28,6 +28,8 @@ public sealed class AdapterConfig
     public string? BaseUrl { get; init; }
     public JsonObject SourceMetadata { get; init; } = [];
     public int QueueCapacity { get; init; } = 256;
+    public int DatabaseQueueCapacity { get; init; } = 128;
+    public ulong MaximumDatabaseCaptureBytes { get; init; } = 1024UL * 1024UL;
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromSeconds(15);
 }
 
@@ -170,7 +172,11 @@ public sealed record NegotiatedSession(
     string ConnectionId,
     string SessionId,
     ulong MaximumMessageBytes,
-    ulong MaximumBodyBytes);
+    ulong MaximumBodyBytes,
+    IReadOnlySet<string>? AcceptedCapabilities = null)
+{
+    public bool SupportsDatabaseCommandCapture => AcceptedCapabilities?.Contains("databaseCommandCapture") == true;
+}
 
 public sealed record MessageAcknowledgement(string MessageId, bool Accepted, string? ErrorCode = null, string? ErrorMessage = null, bool Retryable = false);
 
@@ -254,6 +260,25 @@ public sealed class ExchangeHandle
     }
 
     public Guid ExchangeId { get; }
+    public long MonotonicStart { get; }
+    public DateTimeOffset WallClockStart { get; }
+    public bool IsCaptured => Captured;
+    internal bool Captured { get; }
+    internal int TerminalQueued;
+}
+
+/// Carries only an adapter-side identifier and timing for the independent database lifecycle.
+public sealed class DatabaseCommandHandle
+{
+    internal DatabaseCommandHandle(Guid commandId, long monotonicStart, DateTimeOffset wallClockStart, bool captured)
+    {
+        CommandId = commandId;
+        MonotonicStart = monotonicStart;
+        WallClockStart = wallClockStart;
+        Captured = captured;
+    }
+
+    public Guid CommandId { get; }
     public long MonotonicStart { get; }
     public DateTimeOffset WallClockStart { get; }
     public bool IsCaptured => Captured;

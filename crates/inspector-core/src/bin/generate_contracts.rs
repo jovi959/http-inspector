@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf, process};
 
-use inspector_core::domain::{CaptureMessage, CaptureUiDelta, ClientHello, HttpExchange, ServerMessage};
+use inspector_core::domain::{CaptureMessage, CaptureUiDelta, ClientHello, DatabaseCommand, DatabaseUiDelta, HttpExchange, ServerMessage};
 use schemars::{JsonSchema, schema_for};
 
 /// Root wrapper keeps every public v1 exchange and protocol definition in one JSON Schema artifact.
@@ -12,6 +12,8 @@ struct HttpInspectorContract {
     capture_message: CaptureMessage,
     server_message: ServerMessage,
     ui_delta: CaptureUiDelta,
+    database_command: DatabaseCommand,
+    database_ui_delta: DatabaseUiDelta,
 }
 
 fn main() {
@@ -93,9 +95,18 @@ export interface HttpExchange {
   readonly failure: ExchangeFailure | null; readonly capture: CaptureFidelity; readonly tags: readonly string[]; readonly metadata: Metadata;
 }
 export interface HttpExchangeSummary { readonly key: ExchangeKey; readonly revision: number; readonly arrivalSequence: number; readonly lifecycle: ExchangeLifecycle; readonly method: string; readonly url: string; readonly scheme: string | null; readonly host: string | null; readonly port: number | null; readonly path: string | null; readonly statusCode: number | null; readonly sourceName: string; readonly durationMs: number | null; readonly totalBytes: number | null; readonly tags: readonly string[]; readonly info: string | null; }
+export interface DatabaseCommandKey { readonly sourceInstanceId: string; readonly commandId: string; }
+export type DatabaseCaptureAvailability = "captured" | "unavailable";
+export interface DatabaseQueryCapture { readonly availability: DatabaseCaptureAvailability; readonly value: string | null; readonly observedByteLength: number | null; readonly capturedByteLength: number | null; readonly reason: string | null; }
+export interface DatabaseParameter { readonly name: string; readonly value: JsonValue | null; readonly dbType: string | null; readonly direction: string | null; readonly size: number | null; readonly precision: number | null; readonly scale: number | null; readonly availability: DatabaseCaptureAvailability; readonly reason: string | null; }
+export interface DatabaseParameterCapture { readonly availability: DatabaseCaptureAvailability; readonly values: readonly DatabaseParameter[]; readonly observedByteLength: number | null; readonly capturedByteLength: number | null; readonly reason: string | null; }
+export interface DatabaseCommandFailure { readonly category: string; readonly errorType: string | null; readonly message: string; }
+export interface DatabaseResultAvailability { readonly availability: DatabaseCaptureAvailability; readonly reason: string | null; }
+export interface DatabaseCommand { readonly schemaVersion: SchemaVersion; readonly id: string; readonly sessionId: string; readonly revision: number; readonly arrivalSequence: number; readonly source: CaptureSource; readonly correlation: CorrelationContext | null; readonly lifecycle: ExchangeLifecycle; readonly provider: string; readonly databaseName: string; readonly dataSource: string | null; readonly commandType: string; readonly operation: string; readonly primaryTarget: string; readonly query: DatabaseQueryCapture; readonly parameters: DatabaseParameterCapture; readonly totalDuration: DurationValue; readonly failure: DatabaseCommandFailure | null; readonly result: DatabaseResultAvailability; }
+export interface DatabaseCommandSummary { readonly key: DatabaseCommandKey; readonly revision: number; readonly arrivalSequence: number; readonly lifecycle: ExchangeLifecycle; readonly provider: string; readonly databaseName: string; readonly dataSource: string | null; readonly commandType: string; readonly operation: string; readonly primaryTarget: string; readonly durationMs: number | null; readonly sourceName: string; readonly info: string | null; }
 export interface ProtocolRange { readonly minimum: SchemaVersion; readonly maximum: SchemaVersion; }
 export interface ClientHello { readonly schemaVersion: SchemaVersion; readonly supportedProtocol: ProtocolRange; readonly source: CaptureSource; }
-export interface HelloAccepted { readonly schemaVersion: SchemaVersion; readonly connectionId: string; readonly sessionId: string; readonly maximumMessageBytes: number; readonly maximumBodyBytes: number; }
+export interface HelloAccepted { readonly schemaVersion: SchemaVersion; readonly connectionId: string; readonly sessionId: string; readonly maximumMessageBytes: number; readonly maximumBodyBytes: number; readonly acceptedCapabilities?: readonly string[]; }
 export interface HelloError { readonly code: string; readonly message: string; readonly retryable: boolean; }
 export type CaptureMessage =
   | { readonly type: "exchange.started"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly exchangeId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly request: HttpRequest; readonly timing: ExchangeTiming; readonly tags: readonly string[]; readonly correlation: CorrelationContext | null; readonly metadata: Metadata }
@@ -103,7 +114,13 @@ export type CaptureMessage =
   | { readonly type: "exchange.failed"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly exchangeId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly failure: ExchangeFailure; readonly response: HttpResponse | null; readonly timing: ExchangeTiming; readonly sizes: ExchangeSizes; readonly capture: CaptureFidelity; readonly metadataPatch: Metadata | null }
   | { readonly type: "exchange.cancelled"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly exchangeId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly origin: string; readonly timing: ExchangeTiming; readonly sizes: ExchangeSizes; readonly capture: CaptureFidelity }
   | { readonly type: "exchange.snapshot"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly exchangeId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly exchange: HttpExchange }
+  | { readonly type: "database.command.started"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly commandId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly provider: string; readonly databaseName: string; readonly dataSource: string | null; readonly commandType: string; readonly operation: string; readonly primaryTarget: string; readonly query: DatabaseQueryCapture; readonly parameters: DatabaseParameterCapture; readonly correlation: CorrelationContext | null }
+  | { readonly type: "database.command.completed"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly commandId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly totalDuration: DurationValue; readonly result: DatabaseResultAvailability }
+  | { readonly type: "database.command.failed"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly commandId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly failure: DatabaseCommandFailure; readonly totalDuration: DurationValue; readonly result: DatabaseResultAvailability }
+  | { readonly type: "database.command.cancelled"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly commandId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly origin: string; readonly totalDuration: DurationValue; readonly result: DatabaseResultAvailability }
+  | { readonly type: "database.command.snapshot"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly commandId: string; readonly sourceInstanceId: string; readonly revision: number; readonly sentAt: string; readonly command: DatabaseCommand }
   | { readonly type: "heartbeat"; readonly schemaVersion: SchemaVersion; readonly messageId: string; readonly sourceInstanceId: string; readonly sentAt: string; readonly queuedCount: number; readonly droppedCount: number };
 export type ServerMessage = { readonly type: "hello.accepted"; readonly value: HelloAccepted } | { readonly type: "hello.error"; readonly value: HelloError } | { readonly type: "message.accepted"; readonly messageId: string } | { readonly type: "message.error"; readonly messageId: string | null; readonly error: HelloError };
 export type CaptureUiDelta = { readonly kind: "upsert"; readonly summary: HttpExchangeSummary } | { readonly kind: "remove"; readonly key: ExchangeKey; readonly reason: string } | { readonly kind: "reset"; readonly sessionId: string; readonly summaries: readonly HttpExchangeSummary[] } | { readonly kind: "status"; readonly recording: boolean; readonly connectedSources: number; readonly droppedCount: number; readonly rejectedCount: number } | { readonly kind: "detailInvalidated"; readonly key: ExchangeKey; readonly revision: number };
+export type DatabaseUiDelta = { readonly kind: "upsert"; readonly summary: DatabaseCommandSummary } | { readonly kind: "remove"; readonly key: DatabaseCommandKey; readonly reason: string } | { readonly kind: "reset"; readonly sessionId: string; readonly summaries: readonly DatabaseCommandSummary[] } | { readonly kind: "status"; readonly commandCount: number; readonly retainedBytes: number; readonly retentionBlockedByInFlight: boolean } | { readonly kind: "detailInvalidated"; readonly key: DatabaseCommandKey; readonly revision: number };
 "#;

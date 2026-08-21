@@ -9,18 +9,21 @@ import { getExchangeStoreKey } from "@/domain/display/exchangeKey";
 import { Inspector } from "@/features/inspector/Inspector";
 import { SequenceView } from "@/features/sequence/SequenceView";
 import { StructureView } from "@/features/structure/StructureView";
+import { DatabaseCommandInspector, DatabaseWorkspace } from "@/features/database/DatabaseWorkspace";
 import { RecomposeContextMenu } from "@/features/recompose/RecomposeContextMenu";
 import { createRecomposeDraft } from "@/features/recompose/recomposeDraft";
 import { exportExchange } from "@/features/export/exchangeExport";
 import { parseExchangeImport } from "@/features/import/exchangeImport";
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
+import type { DatabaseCaptureDataSource } from "@/data/ports/DatabaseCaptureDataSource";
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
-import type { HttpExchange } from "@/generated/contracts";
+import type { DatabaseCommand, HttpExchange } from "@/generated/contracts";
 import { useCaptureStore } from "@/state/capture/captureStore";
 import { ProjectIntegrationsDialog } from "@/features/projectIntegration/ProjectIntegrationsDialog";
 
 interface AppProps {
   readonly dataSource: CaptureDataSource;
+  readonly databaseDataSource: DatabaseCaptureDataSource | null;
   readonly projectIntegration: ProjectIntegrationService;
   readonly isImported?: boolean;
   onImportedExchange?(exchange: HttpExchange): void;
@@ -34,12 +37,13 @@ interface RecomposeMenuState {
 }
 
 /** Loads the injected source once and renders the two synchronized capture projections. */
-export function App({ dataSource, isImported = false, onImportedExchange, onReturnToLiveCapture, projectIntegration }: AppProps) {
+export function App({ dataSource, databaseDataSource, isImported = false, onImportedExchange, onReturnToLiveCapture, projectIntegration }: AppProps) {
   const [recomposeMenu, setRecomposeMenu] = useState<RecomposeMenuState | null>(null);
   const [integrationDialogOpen, setIntegrationDialogOpen] = useState(false);
   const [activeIntegrationCount, setActiveIntegrationCount] = useState(0);
   const [captureEndpoint, setCaptureEndpoint] = useState("ws://127.0.0.1:53662/v1/capture");
   const [importError, setImportError] = useState<string | null>(null);
+  const [selectedDatabaseCommand, setSelectedDatabaseCommand] = useState<DatabaseCommand | null>(null);
   const recording = useCaptureStore((state) => state.captureStatus.recording);
   const captureStatus = useCaptureStore((state) => state.captureStatus);
   const totalCount = useCaptureStore((state) => state.arrivalOrder.length);
@@ -126,6 +130,7 @@ export function App({ dataSource, isImported = false, onImportedExchange, onRetu
     <nav className="workspace-switch" aria-label="Capture workspace">
       <button aria-keyshortcuts="Control+1 Meta+1" className={workspaceView === "structure" ? "is-active" : ""} type="button" onClick={() => setWorkspaceView("structure")}>Structure</button>
       <button aria-keyshortcuts="Control+2 Meta+2" className={workspaceView === "sequence" ? "is-active" : ""} type="button" onClick={() => setWorkspaceView("sequence")}>Sequence</button>
+      <button aria-keyshortcuts="Control+3 Meta+3" className={workspaceView === "database" ? "is-active" : ""} type="button" onClick={() => setWorkspaceView("database")}>Database</button>
     </nav>
   );
 
@@ -134,8 +139,8 @@ export function App({ dataSource, isImported = false, onImportedExchange, onRetu
       <AppShell
         toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} importError={importError} isImported={isImported} onClearSession={handleClearSession} onImportExchange={handleImportExchange} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onReturnToLiveCapture={() => onReturnToLiveCapture?.()} onThemeChange={setTheme} />}
         workspaceSwitch={workspaceSwitch}
-        primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : <SequenceView onRecompose={openRecomposeMenu} />}
-        inspector={<Inspector dataSource={dataSource} />}
+        primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : workspaceView === "sequence" ? <SequenceView onRecompose={openRecomposeMenu} /> : <DatabaseWorkspace dataSource={databaseDataSource} onCommandSelected={setSelectedDatabaseCommand} />}
+        inspector={workspaceView === "database" ? <DatabaseCommandInspector command={selectedDatabaseCommand} /> : <Inspector dataSource={dataSource} />}
         paneLayout={paneLayout}
         statusBar={<CaptureStatusBar status={captureStatus} listener={dataSource.listener} onRetry={() => dataSource.retryConnection()} />}
         onPaneLayoutChange={setPaneLayout}

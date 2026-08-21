@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using System.Data;
+using System.Data.Common;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace HttpInspector.Adapter;
 
@@ -19,6 +22,9 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
     private readonly Queue<OutboundMessage> _queue = [];
     private readonly Dictionary<Guid, OutboundMessage> _pending = [];
     private readonly Dictionary<Guid, ExchangeState> _exchanges = [];
+    private readonly Queue<OutboundMessage> _databaseQueue = [];
+    private readonly Dictionary<Guid, OutboundMessage> _databasePending = [];
+    private readonly Dictionary<Guid, DatabaseCommandState> _databaseCommands = [];
     private readonly ConcurrentQueue<AdapterDiagnostic> _diagnostics = [];
     private readonly SemaphoreSlim _wake = new(0);
     private readonly CancellationTokenSource _stopping = new();
@@ -30,7 +36,9 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
     private bool _hasConnected;
     private bool _reconnectDisabled;
     private long _droppedCount;
+    private long _databaseDroppedCount;
     private NegotiatedSession? _negotiatedSession;
+    private bool _databaseCapabilityDiagnosticRecorded;
 
     private HttpInspectorAdapter(AdapterConfig config, AdapterDependencies dependencies, Uri effectiveEndpoint)
     {
@@ -54,6 +62,7 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
     }
 
     public long DroppedCount => Interlocked.Read(ref _droppedCount);
+    public long DatabaseDroppedCount => Interlocked.Read(ref _databaseDroppedCount);
     public IReadOnlyList<AdapterDiagnostic> Diagnostics => _diagnostics.ToArray();
 
     public static HttpInspectorAdapter Create(AdapterConfig config, AdapterDependencies? dependencies = null)
@@ -144,6 +153,54 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         QueueTerminal(handle, "exchange.cancelled", null, null, origin, data);
     }
 
+    /// Captures one completed database command lifecycle without changing the application's database call path.
+    public DatabaseCommandHandle CaptureDatabaseStarted(DbCommand command, CaptureContext? context = null)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        Start();
+
+        var start = _dependencies.Clock.GetTimestamp();
+        var startedAt = _dependencies.Clock.UtcNow;
+        var commandId = _dependencies.IdGenerator.NextUuid();
+        var handle = new DatabaseCommandHandle(commandId, start, startedAt, true);
+        var state = BuildDatabaseCommandState(handle, command, context);
+        var message = BuildDatabaseStartedMessage(state, startedAt);
+
+        lock (_gate)
+        {
+            if (_stopped || !TryEnqueueDatabaseLocked(message))
+            {
+                handle.TerminalQueued = 1;
+                return new DatabaseCommandHandle(commandId, start, startedAt, false);
+            }
+
+            _databaseCommands[commandId] = state;
+        }
+
+        WakeWorker();
+        return handle;
+    }
+
+    /// Completes database capture without attempting to read result rows or database streams.
+    public void CaptureDatabaseCompleted(DatabaseCommandHandle handle)
+    {
+        QueueDatabaseTerminal(handle, "database.command.completed", null, null);
+    }
+
+    /// Records a provider failure while keeping the original SQL capture separate from HTTP failures.
+    public void CaptureDatabaseFailed(DatabaseCommandHandle handle, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        QueueDatabaseTerminal(handle, "database.command.failed", exception, null);
+    }
+
+    /// Records cancellation as a terminal database lifecycle state without affecting command execution.
+    public void CaptureDatabaseCancelled(DatabaseCommandHandle handle, string origin)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+        QueueDatabaseTerminal(handle, "database.command.cancelled", null, origin);
+    }
+
     public async Task FlushAsync(TimeSpan timeout)
     {
         if (timeout <= TimeSpan.Zero)
@@ -202,6 +259,9 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
             _queue.Clear();
             _pending.Clear();
             _exchanges.Clear();
+            _databaseQueue.Clear();
+            _databasePending.Clear();
+            _databaseCommands.Clear();
             _negotiatedSession = null;
         }
     }
@@ -246,9 +306,11 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
             || string.IsNullOrWhiteSpace(config.AdapterName)
             || string.IsNullOrWhiteSpace(config.AdapterVersion)
             || config.QueueCapacity <= 0
+            || config.DatabaseQueueCapacity <= 0
+            || config.MaximumDatabaseCaptureBytes == 0
             || config.HeartbeatInterval <= TimeSpan.Zero)
         {
-            throw new ArgumentException("Adapter source fields, queue capacity, and heartbeat interval must be valid.", nameof(config));
+            throw new ArgumentException("Adapter source fields, queue capacities, capture limits, and heartbeat interval must be valid.", nameof(config));
         }
     }
 
@@ -277,6 +339,10 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
                 {
                     _negotiatedSession = session;
                     _connectionFaulted = false;
+                    if (!session.SupportsDatabaseCommandCapture)
+                    {
+                        DropUnsupportedDatabaseCaptureLocked();
+                    }
                 }
 
                 if (_hasConnected)
@@ -297,7 +363,7 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
                             break;
                         }
 
-                        message = _queue.Count > 0 ? _queue.Dequeue() : null;
+                        message = _queue.Count > 0 ? _queue.Dequeue() : _databaseQueue.Count > 0 ? _databaseQueue.Dequeue() : null;
                     }
 
                     if (message is null)
@@ -419,11 +485,41 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         WakeWorker();
     }
 
+    private void QueueDatabaseTerminal(DatabaseCommandHandle handle, string type, Exception? exception, string? origin)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        if (!handle.Captured || Interlocked.Exchange(ref handle.TerminalQueued, 1) != 0)
+        {
+            return;
+        }
+
+        var endedAt = _dependencies.Clock.UtcNow;
+        var elapsed = _dependencies.Clock.GetElapsed(handle.MonotonicStart, _dependencies.Clock.GetTimestamp());
+        lock (_gate)
+        {
+            if (_stopped || !_databaseCommands.TryGetValue(handle.CommandId, out var state))
+            {
+                return;
+            }
+
+            var message = BuildDatabaseTerminalMessage(type, state, elapsed, endedAt, exception, origin);
+            if (!TryEnqueueDatabaseLocked(message))
+            {
+                _databaseCommands.Remove(handle.CommandId);
+                return;
+            }
+
+            state.ApplyTerminal(type, endedAt, elapsed, exception, origin);
+        }
+
+        WakeWorker();
+    }
+
     private void Dispatch(OutboundMessage message, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            _pending[message.MessageId] = message;
+            PendingFor(message.Stream)[message.MessageId] = message;
         }
 
         _ = ObserveAcknowledgementAsync(message, cancellationToken);
@@ -441,10 +537,14 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
 
             lock (_gate)
             {
-                _pending.Remove(message.MessageId);
+                PendingFor(message.Stream).Remove(message.MessageId);
                 if (acknowledgement.Accepted && message.ReleasesExchangeOnAcknowledgement)
                 {
                     _exchanges.Remove(message.ExchangeId!.Value);
+                }
+                if (acknowledgement.Accepted && message.ReleasesDatabaseCommandOnAcknowledgement)
+                {
+                    _databaseCommands.Remove(message.DatabaseCommandId!.Value);
                 }
             }
 
@@ -481,7 +581,7 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
     {
         lock (_gate)
         {
-            _pending.Remove(message.MessageId);
+            PendingFor(message.Stream).Remove(message.MessageId);
             if (_stopped)
             {
                 return;
@@ -489,14 +589,15 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
 
             var retryQueue = new Queue<OutboundMessage>();
             retryQueue.Enqueue(message);
-            while (_queue.Count > 0)
+            var queue = QueueFor(message.Stream);
+            while (queue.Count > 0)
             {
-                retryQueue.Enqueue(_queue.Dequeue());
+                retryQueue.Enqueue(queue.Dequeue());
             }
 
             while (retryQueue.Count > 0)
             {
-                _queue.Enqueue(retryQueue.Dequeue());
+                queue.Enqueue(retryQueue.Dequeue());
             }
         }
 
@@ -539,6 +640,42 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
 
         _queue.Enqueue(message);
         return true;
+    }
+
+    private bool TryEnqueueDatabaseLocked(OutboundMessage message)
+    {
+        if (_negotiatedSession is not null && !_negotiatedSession.SupportsDatabaseCommandCapture)
+        {
+            return false;
+        }
+        if (_databaseQueue.Count + _databasePending.Count >= _config.DatabaseQueueCapacity)
+        {
+            Interlocked.Increment(ref _databaseDroppedCount);
+            RecordDiagnostic("databaseQueueOverloaded", "The bounded database capture queue is full; database execution was not affected.", true);
+            return false;
+        }
+
+        _databaseQueue.Enqueue(message);
+        return true;
+    }
+
+    private Queue<OutboundMessage> QueueFor(CaptureStream stream) => stream == CaptureStream.Database ? _databaseQueue : _queue;
+
+    private Dictionary<Guid, OutboundMessage> PendingFor(CaptureStream stream) => stream == CaptureStream.Database ? _databasePending : _pending;
+
+    private void DropUnsupportedDatabaseCaptureLocked()
+    {
+        var hadDatabaseCapture = _databaseQueue.Count > 0 || _databasePending.Count > 0 || _databaseCommands.Count > 0;
+        _databaseQueue.Clear();
+        _databasePending.Clear();
+        _databaseCommands.Clear();
+        if (!hadDatabaseCapture || _databaseCapabilityDiagnosticRecorded)
+        {
+            return;
+        }
+
+        _databaseCapabilityDiagnosticRecorded = true;
+        RecordDiagnostic("databaseCaptureUnsupported", "The connected HTTP Inspector listener does not advertise database command capture; HTTP capture continues unchanged.", false);
     }
 
     private JsonObject BuildHello() => new()
@@ -620,6 +757,77 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         return new OutboundMessage(messageId, exchangeId, 2, payload, true, state.RequestJson, timing, sizes, capture, responseJson);
     }
 
+    private DatabaseCommandState BuildDatabaseCommandState(DatabaseCommandHandle handle, DbCommand command, CaptureContext? context)
+    {
+        var query = DatabaseQueryJson(command.CommandText);
+        var parameters = DatabaseParametersJson(command.Parameters);
+        return new DatabaseCommandState(
+            handle,
+            context,
+            ProviderName(command),
+            string.IsNullOrWhiteSpace(command.Connection?.Database) ? "Unknown database" : command.Connection.Database,
+            command.Connection?.DataSource,
+            command.CommandType.ToString(),
+            DatabaseOperation(command),
+            DatabasePrimaryTarget(command.CommandText),
+            query,
+            parameters);
+    }
+
+    private OutboundMessage BuildDatabaseStartedMessage(DatabaseCommandState state, DateTimeOffset sentAt)
+    {
+        var messageId = _dependencies.IdGenerator.NextUuid();
+        var payload = DatabaseLifecycleBase("database.command.started", state.Handle.CommandId, 1, sentAt, messageId);
+        payload["provider"] = state.Provider;
+        payload["databaseName"] = state.DatabaseName;
+        payload["dataSource"] = state.DataSource;
+        payload["commandType"] = state.CommandType;
+        payload["operation"] = state.Operation;
+        payload["primaryTarget"] = state.PrimaryTarget;
+        payload["query"] = state.QueryJson.DeepClone();
+        payload["parameters"] = state.ParametersJson.DeepClone();
+        payload["correlation"] = CorrelationJson(state.Context);
+        return new OutboundMessage(messageId, null, 1, payload, false, null, null, null, null)
+        {
+            Stream = CaptureStream.Database,
+            DatabaseCommandId = state.Handle.CommandId,
+        };
+    }
+
+    private OutboundMessage BuildDatabaseTerminalMessage(
+        string type,
+        DatabaseCommandState state,
+        TimeSpan elapsed,
+        DateTimeOffset sentAt,
+        Exception? exception,
+        string? origin)
+    {
+        var messageId = _dependencies.IdGenerator.NextUuid();
+        var payload = DatabaseLifecycleBase(type, state.Handle.CommandId, 2, sentAt, messageId);
+        payload["totalDuration"] = DurationJson((ulong)Math.Max(0, (long)elapsed.TotalMilliseconds), "measured");
+        payload["result"] = DatabaseResultJson();
+        if (type == "database.command.failed")
+        {
+            payload["failure"] = new JsonObject
+            {
+                ["category"] = "provider",
+                ["errorType"] = exception!.GetType().FullName,
+                ["message"] = exception.Message,
+            };
+        }
+        else if (type == "database.command.cancelled")
+        {
+            payload["origin"] = origin;
+        }
+
+        return new OutboundMessage(messageId, null, 2, payload, false, null, null, null, null)
+        {
+            Stream = CaptureStream.Database,
+            DatabaseCommandId = state.Handle.CommandId,
+            ReleasesDatabaseCommandOnAcknowledgement = true,
+        };
+    }
+
     private OutboundMessage BuildHeartbeatMessage()
     {
         var messageId = _dependencies.IdGenerator.NextUuid();
@@ -630,8 +838,8 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
             ["messageId"] = messageId.ToString(),
             ["sourceInstanceId"] = SourceInstanceId.ToString(),
             ["sentAt"] = Timestamp(_dependencies.Clock.UtcNow),
-            ["queuedCount"] = _queue.Count + _pending.Count,
-            ["droppedCount"] = DroppedCount,
+            ["queuedCount"] = _queue.Count + _pending.Count + _databaseQueue.Count + _databasePending.Count,
+            ["droppedCount"] = DroppedCount + DatabaseDroppedCount,
         };
         return new OutboundMessage(messageId, null, null, payload, false, null, null, null, null);
     }
@@ -681,6 +889,154 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
             ["revision"] = revision,
             ["sentAt"] = Timestamp(sentAt),
         };
+    }
+
+    private JsonObject DatabaseLifecycleBase(string type, Guid commandId, ulong revision, DateTimeOffset sentAt, Guid messageId)
+    {
+        return new JsonObject
+        {
+            ["type"] = type,
+            ["schemaVersion"] = VersionJson(),
+            ["messageId"] = messageId.ToString(),
+            ["commandId"] = commandId.ToString(),
+            ["sourceInstanceId"] = SourceInstanceId.ToString(),
+            ["revision"] = revision,
+            ["sentAt"] = Timestamp(sentAt),
+        };
+    }
+
+    private JsonObject DatabaseQueryJson(string? commandText)
+    {
+        if (commandText is null)
+        {
+            return DatabaseUnavailableJson("command text was unavailable");
+        }
+
+        var observedByteLength = Encoding.UTF8.GetByteCount(commandText);
+        if ((ulong)observedByteLength > _config.MaximumDatabaseCaptureBytes)
+        {
+            return DatabaseUnavailableJson("command text exceeds the database capture limit", observedByteLength);
+        }
+
+        return new JsonObject
+        {
+            ["availability"] = "captured",
+            ["value"] = commandText,
+            ["observedByteLength"] = observedByteLength,
+            ["capturedByteLength"] = observedByteLength,
+            ["reason"] = null,
+        };
+    }
+
+    private JsonObject DatabaseParametersJson(DbParameterCollection parameters)
+    {
+        var values = new JsonArray();
+        foreach (DbParameter parameter in parameters)
+        {
+            values.Add(DatabaseParameterJson(parameter));
+        }
+
+        var observedByteLength = Encoding.UTF8.GetByteCount(values.ToJsonString(JsonOptions));
+        if ((ulong)observedByteLength > _config.MaximumDatabaseCaptureBytes)
+        {
+            return new JsonObject
+            {
+                ["availability"] = "unavailable",
+                ["values"] = new JsonArray(),
+                ["observedByteLength"] = observedByteLength,
+                ["capturedByteLength"] = null,
+                ["reason"] = "parameter payload exceeds the database capture limit",
+            };
+        }
+
+        return new JsonObject
+        {
+            ["availability"] = "captured",
+            ["values"] = values,
+            ["observedByteLength"] = observedByteLength,
+            ["capturedByteLength"] = observedByteLength,
+            ["reason"] = null,
+        };
+    }
+
+    private static JsonObject DatabaseParameterJson(DbParameter parameter)
+    {
+        var value = DatabaseParameterValueJson(parameter.Value, out var availability, out var reason);
+        return new JsonObject
+        {
+            ["name"] = parameter.ParameterName,
+            ["value"] = value,
+            ["dbType"] = parameter.DbType.ToString(),
+            ["direction"] = parameter.Direction.ToString(),
+            ["size"] = parameter.Size,
+            ["precision"] = parameter.Precision,
+            ["scale"] = parameter.Scale,
+            ["availability"] = availability,
+            ["reason"] = reason,
+        };
+    }
+
+    private static JsonNode? DatabaseParameterValueJson(object? value, out string availability, out string? reason)
+    {
+        if (value is null || value is DBNull)
+        {
+            availability = "captured";
+            reason = null;
+            return null;
+        }
+        if (value is Stream or TextReader)
+        {
+            availability = "unavailable";
+            reason = "stream parameter values are not consumed for capture";
+            return null;
+        }
+
+        try
+        {
+            availability = "captured";
+            reason = null;
+            return JsonSerializer.SerializeToNode(value, value.GetType(), JsonOptions);
+        }
+        catch (Exception)
+        {
+            availability = "unavailable";
+            reason = "parameter value could not be serialized without altering execution";
+            return null;
+        }
+    }
+
+    private static JsonObject DatabaseUnavailableJson(string reason, int? observedByteLength = null) => new()
+    {
+        ["availability"] = "unavailable",
+        ["value"] = null,
+        ["observedByteLength"] = observedByteLength,
+        ["capturedByteLength"] = null,
+        ["reason"] = reason,
+    };
+
+    private static JsonObject DatabaseResultJson() => new()
+    {
+        ["availability"] = "unavailable",
+        ["reason"] = "result rows are not captured",
+    };
+
+    private static string ProviderName(DbCommand command) => command.GetType().Assembly.GetName().Name ?? command.GetType().Namespace ?? "unknown";
+
+    private static string DatabaseOperation(DbCommand command)
+    {
+        if (command.CommandType == CommandType.StoredProcedure)
+        {
+            return "storedProcedure";
+        }
+
+        var firstKeyword = Regex.Match(command.CommandText ?? string.Empty, @"(?i)\b(select|insert|update|delete|merge|execute)\b");
+        return firstKeyword.Success ? firstKeyword.Groups[1].Value.ToUpperInvariant() : "unknown";
+    }
+
+    private static string DatabasePrimaryTarget(string? commandText)
+    {
+        var target = Regex.Match(commandText ?? string.Empty, @"(?ix)\b(?:from|join|into|update)\s+((?:\[[^\]]+\]|[A-Za-z_][\w$]*)(?:\s*\.\s*(?:\[[^\]]+\]|[A-Za-z_][\w$]*)){0,2})");
+        return target.Success ? target.Groups[1].Value.Replace(" ", string.Empty, StringComparison.Ordinal) : "Unknown target";
     }
 
     private JsonObject SourceJson() => new()
@@ -1014,6 +1370,15 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         public JsonObject? CaptureJson { get; } = captureJson;
         public JsonObject? ResponseJson { get; } = responseJson;
         public JsonObject? MetadataJson { get; } = metadataJson;
+        public CaptureStream Stream { get; init; } = CaptureStream.Http;
+        public Guid? DatabaseCommandId { get; init; }
+        public bool ReleasesDatabaseCommandOnAcknowledgement { get; init; }
+    }
+
+    private enum CaptureStream
+    {
+        Http,
+        Database,
     }
 
     private sealed class ExchangeState(
@@ -1062,6 +1427,42 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
                 ["retryable"] = failure.Retryable,
                 ["code"] = failure.Code,
             };
+        }
+    }
+
+    private sealed class DatabaseCommandState(
+        DatabaseCommandHandle handle,
+        CaptureContext? context,
+        string provider,
+        string databaseName,
+        string? dataSource,
+        string commandType,
+        string operation,
+        string primaryTarget,
+        JsonObject queryJson,
+        JsonObject parametersJson)
+    {
+        public DatabaseCommandHandle Handle { get; } = handle;
+        public CaptureContext? Context { get; } = context;
+        public string Provider { get; } = provider;
+        public string DatabaseName { get; } = databaseName;
+        public string? DataSource { get; } = dataSource;
+        public string CommandType { get; } = commandType;
+        public string Operation { get; } = operation;
+        public string PrimaryTarget { get; } = primaryTarget;
+        public JsonObject QueryJson { get; } = queryJson;
+        public JsonObject ParametersJson { get; } = parametersJson;
+        public DateTimeOffset LastUpdatedAt { get; private set; } = handle.WallClockStart;
+        public ulong Revision { get; private set; } = 1;
+
+        public void ApplyTerminal(string type, DateTimeOffset endedAt, TimeSpan elapsed, Exception? exception, string? origin)
+        {
+            _ = type;
+            _ = elapsed;
+            _ = exception;
+            _ = origin;
+            Revision = 2;
+            LastUpdatedAt = endedAt;
         }
     }
 }

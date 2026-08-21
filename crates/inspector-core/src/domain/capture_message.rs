@@ -2,7 +2,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CaptureFidelity, CaptureSource, CorrelationContext, ExchangeFailure, ExchangeKey,
+    CaptureFidelity, CaptureSource, CorrelationContext, DatabaseCommand, DatabaseCommandFailure,
+    DatabaseParameterCapture, DatabaseQueryCapture, DatabaseResultAvailability, DurationValue,
+    ExchangeFailure, ExchangeKey,
     ExchangeSizes, ExchangeTiming, HttpExchange, HttpExchangeSummary, HttpRequest, HttpResponse,
     Metadata, SchemaVersion,
 };
@@ -33,6 +35,8 @@ pub struct HelloAccepted {
     pub session_id: String,
     pub maximum_message_bytes: u64,
     pub maximum_body_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accepted_capabilities: Option<Vec<String>>,
 }
 
 /// Machine-readable handshake or message failures for adapters.
@@ -113,6 +117,69 @@ pub enum CaptureMessage {
         revision: u64,
         sent_at: String,
         exchange: Box<HttpExchange>,
+    },
+    #[serde(rename = "database.command.started")]
+    DatabaseCommandStarted {
+        schema_version: SchemaVersion,
+        message_id: String,
+        command_id: String,
+        source_instance_id: String,
+        revision: u64,
+        sent_at: String,
+        provider: String,
+        database_name: String,
+        data_source: Option<String>,
+        command_type: String,
+        operation: String,
+        primary_target: String,
+        query: DatabaseQueryCapture,
+        parameters: DatabaseParameterCapture,
+        correlation: Option<CorrelationContext>,
+    },
+    #[serde(rename = "database.command.completed")]
+    DatabaseCommandCompleted {
+        schema_version: SchemaVersion,
+        message_id: String,
+        command_id: String,
+        source_instance_id: String,
+        revision: u64,
+        sent_at: String,
+        total_duration: DurationValue,
+        result: DatabaseResultAvailability,
+    },
+    #[serde(rename = "database.command.failed")]
+    DatabaseCommandFailed {
+        schema_version: SchemaVersion,
+        message_id: String,
+        command_id: String,
+        source_instance_id: String,
+        revision: u64,
+        sent_at: String,
+        failure: DatabaseCommandFailure,
+        total_duration: DurationValue,
+        result: DatabaseResultAvailability,
+    },
+    #[serde(rename = "database.command.cancelled")]
+    DatabaseCommandCancelled {
+        schema_version: SchemaVersion,
+        message_id: String,
+        command_id: String,
+        source_instance_id: String,
+        revision: u64,
+        sent_at: String,
+        origin: String,
+        total_duration: DurationValue,
+        result: DatabaseResultAvailability,
+    },
+    #[serde(rename = "database.command.snapshot")]
+    DatabaseCommandSnapshot {
+        schema_version: SchemaVersion,
+        message_id: String,
+        command_id: String,
+        source_instance_id: String,
+        revision: u64,
+        sent_at: String,
+        command: Box<DatabaseCommand>,
     },
     #[serde(rename = "heartbeat")]
     Heartbeat {

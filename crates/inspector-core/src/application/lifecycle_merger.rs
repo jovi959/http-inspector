@@ -113,6 +113,11 @@ pub fn merge_capture_message(
             exchange.validate()?;
             Ok(MergeResult::Applied(Box::new(exchange)))
         }
+        CaptureMessage::DatabaseCommandStarted { .. }
+        | CaptureMessage::DatabaseCommandCompleted { .. }
+        | CaptureMessage::DatabaseCommandFailed { .. }
+        | CaptureMessage::DatabaseCommandCancelled { .. }
+        | CaptureMessage::DatabaseCommandSnapshot { .. } => Err(ModelValidationError("database message was sent to the HTTP lifecycle merger".into())),
     }
 }
 

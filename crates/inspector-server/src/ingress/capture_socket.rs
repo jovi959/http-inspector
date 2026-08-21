@@ -47,6 +47,7 @@ async fn capture_connection(mut socket: WebSocket, state: ServerState) {
             session_id: state.hub.status().session_id,
             maximum_message_bytes: state.maximum_message_bytes as u64,
             maximum_body_bytes: state.maximum_body_bytes,
+            accepted_capabilities: Some(vec!["databaseCommandCapture".into()]),
         },
     };
     if send_json(&mut socket, &accepted).await.is_err() {
@@ -107,7 +108,12 @@ async fn capture_connection(mut socket: WebSocket, state: ServerState) {
     if let Ok(mutation) = state.hub.mark_source_disconnected(&hello.source.instance_id, &timestamp())
         && mutation.changed
     {
-        let _ = state.ui_events.send(mutation.deltas);
+        if !mutation.deltas.is_empty() {
+            let _ = state.ui_events.send(mutation.deltas);
+        }
+        if !mutation.database_deltas.is_empty() {
+            let _ = state.database_ui_events.send(mutation.database_deltas);
+        }
     }
     publish_status(&state);
 }
@@ -129,6 +135,11 @@ fn message_id(message: &CaptureMessage) -> Option<&str> {
         | CaptureMessage::ExchangeFailed { message_id, .. }
         | CaptureMessage::ExchangeCancelled { message_id, .. }
         | CaptureMessage::ExchangeSnapshot { message_id, .. }
+        | CaptureMessage::DatabaseCommandStarted { message_id, .. }
+        | CaptureMessage::DatabaseCommandCompleted { message_id, .. }
+        | CaptureMessage::DatabaseCommandFailed { message_id, .. }
+        | CaptureMessage::DatabaseCommandCancelled { message_id, .. }
+        | CaptureMessage::DatabaseCommandSnapshot { message_id, .. }
         | CaptureMessage::Heartbeat { message_id, .. } => Some(message_id),
     }
 }
@@ -210,7 +221,13 @@ fn validate_message_body_limits(message: &CaptureMessage, maximum_body_bytes: u6
             validate_request_bodies(&exchange.request, maximum_body_bytes)?;
             exchange.response.as_ref().map_or(Ok(()), |value| validate_response_bodies(value, maximum_body_bytes))
         }
-        CaptureMessage::ExchangeCancelled { .. } | CaptureMessage::Heartbeat { .. } => Ok(()),
+        CaptureMessage::ExchangeCancelled { .. }
+        | CaptureMessage::DatabaseCommandStarted { .. }
+        | CaptureMessage::DatabaseCommandCompleted { .. }
+        | CaptureMessage::DatabaseCommandFailed { .. }
+        | CaptureMessage::DatabaseCommandCancelled { .. }
+        | CaptureMessage::DatabaseCommandSnapshot { .. }
+        | CaptureMessage::Heartbeat { .. } => Ok(()),
     }
 }
 

@@ -1,5 +1,5 @@
 export type AppTheme = "system" | "light" | "dark";
-export type WorkspaceView = "structure" | "sequence";
+export type WorkspaceView = "structure" | "sequence" | "database";
 export type SequenceColumnId = "status" | "method" | "host" | "path" | "source" | "arrival" | "duration";
 
 export interface WorkspacePaneLayout {
@@ -46,7 +46,7 @@ function isStoredDisplayPreferences(value: unknown): value is StoredDisplayPrefe
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StoredDisplayPreferences>;
   return (candidate.theme === "system" || candidate.theme === "light" || candidate.theme === "dark")
-    && (candidate.workspaceView === "structure" || candidate.workspaceView === "sequence")
+    && (candidate.workspaceView === "structure" || candidate.workspaceView === "sequence" || candidate.workspaceView === "database")
     && isPaneLayout(candidate.paneLayout)
     && isColumnOrder(candidate.sequenceColumnOrder)
     && isColumnWidths(candidate.sequenceColumnWidths);

@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::StreamExt;
-use inspector_core::domain::{CaptureUiDelta, ExchangeKey, HttpExchange, HttpExchangeSummary};
+use inspector_core::domain::{CaptureUiDelta, DatabaseCommand, DatabaseCommandKey, DatabaseCommandSummary, DatabaseUiDelta, ExchangeKey, HttpExchange, HttpExchangeSummary};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
@@ -37,6 +37,11 @@ pub(crate) async fn exchanges(State(state): State<ServerState>) -> Json<Vec<Http
     Json(state.hub.snapshot())
 }
 
+/// Hosted development exposes database summaries through a separate route from HTTP exchanges.
+pub(crate) async fn database_commands(State(state): State<ServerState>) -> Json<Vec<DatabaseCommandSummary>> {
+    Json(state.hub.database_snapshot())
+}
+
 pub(crate) async fn exchange(
     State(state): State<ServerState>,
     Path((source_instance_id, exchange_id)): Path<(String, String)>,
@@ -44,6 +49,16 @@ pub(crate) async fn exchange(
     state.hub.exchange(&ExchangeKey { source_instance_id, exchange_id })
         .map(Json)
         .ok_or_else(|| ApiError::not_found("exchange was not found"))
+}
+
+/// SQL detail is read only after an item is selected so the database stream stays summary-sized.
+pub(crate) async fn database_command(
+    State(state): State<ServerState>,
+    Path((source_instance_id, command_id)): Path<(String, String)>,
+) -> Result<Json<DatabaseCommand>, ApiError> {
+    state.hub.database_command(&DatabaseCommandKey { source_instance_id, command_id })
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found("database command was not found"))
 }
 
 pub(crate) async fn set_recording(
@@ -69,6 +84,11 @@ pub(crate) async fn replay(State(state): State<ServerState>, Json(request): Json
 /// Browser development receives the same ordered summary batches as the future Tauri channel.
 pub(crate) async fn ui_socket(State(state): State<ServerState>, upgrade: WebSocketUpgrade) -> Response {
     upgrade.max_message_size(state.maximum_message_bytes).on_upgrade(move |socket| stream_ui(socket, state))
+}
+
+/// Browser development receives the database stream without sharing HTTP UI events.
+pub(crate) async fn database_ui_socket(State(state): State<ServerState>, upgrade: WebSocketUpgrade) -> Response {
+    upgrade.max_message_size(state.maximum_message_bytes).on_upgrade(move |socket| stream_database_ui(socket, state))
 }
 
 async fn stream_ui(mut socket: WebSocket, state: ServerState) {
@@ -97,8 +117,39 @@ async fn stream_ui(mut socket: WebSocket, state: ServerState) {
     }
 }
 
+async fn stream_database_ui(mut socket: WebSocket, state: ServerState) {
+    let initial = DatabaseUiDelta::Reset { session_id: state.hub.status().session_id, summaries: state.hub.database_snapshot() };
+    if send_database_deltas(&mut socket, vec![initial]).await.is_err() {
+        return;
+    }
+    let mut events = state.database_ui_events.subscribe();
+    loop {
+        tokio::select! {
+            incoming = socket.next() => match incoming {
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => return,
+                Some(Ok(_)) => {}
+            },
+            event = events.recv() => match event {
+                Ok(deltas) => {
+                    if send_database_deltas(&mut socket, deltas).await.is_err() { return; }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let reset = DatabaseUiDelta::Reset { session_id: state.hub.status().session_id, summaries: state.hub.database_snapshot() };
+                    if send_database_deltas(&mut socket, vec![reset]).await.is_err() { return; }
+                }
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+}
+
 async fn send_deltas(socket: &mut WebSocket, deltas: Vec<CaptureUiDelta>) -> Result<(), axum::Error> {
     let payload = serde_json::to_string(&deltas).expect("UI deltas should serialize");
+    socket.send(Message::Text(payload.into())).await
+}
+
+async fn send_database_deltas(socket: &mut WebSocket, deltas: Vec<DatabaseUiDelta>) -> Result<(), axum::Error> {
+    let payload = serde_json::to_string(&deltas).expect("database UI deltas should serialize");
     socket.send(Message::Text(payload.into())).await
 }
 

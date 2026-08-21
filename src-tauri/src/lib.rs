@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::{Arc, Mutex}};
 
-use inspector_core::domain::{CaptureUiDelta, ExchangeKey, HttpBody, HttpExchange, HttpExchangeSummary};
+use inspector_core::domain::{CaptureUiDelta, DatabaseCommand, DatabaseCommandKey, DatabaseCommandSummary, DatabaseUiDelta, ExchangeKey, HttpBody, HttpExchange, HttpExchangeSummary};
 use inspector_server::{CaptureServerStatus, ReplayExecutionReceipt, ReplayRequest, RunningServer, ServerConfig};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, State, ipc::Channel};
@@ -54,8 +54,18 @@ fn capture_snapshot(runtime: State<'_, NativeCaptureRuntime>) -> Result<Vec<Http
 }
 
 #[tauri::command]
+fn database_capture_snapshot(runtime: State<'_, NativeCaptureRuntime>) -> Result<Vec<DatabaseCommandSummary>, String> {
+    with_running_server(&runtime, |server| server.database_snapshot())
+}
+
+#[tauri::command]
 fn capture_exchange(source_instance_id: String, exchange_id: String, runtime: State<'_, NativeCaptureRuntime>) -> Result<Option<HttpExchange>, String> {
     with_running_server(&runtime, |server| server.exchange(&ExchangeKey { source_instance_id, exchange_id }))
+}
+
+#[tauri::command]
+fn database_capture_command(source_instance_id: String, command_id: String, runtime: State<'_, NativeCaptureRuntime>) -> Result<Option<DatabaseCommand>, String> {
+    with_running_server(&runtime, |server| server.database_command(&DatabaseCommandKey { source_instance_id, command_id }))
 }
 
 #[tauri::command]
@@ -100,6 +110,29 @@ fn subscribe_capture_deltas(channel: Channel<Vec<CaptureUiDelta>>, runtime: Stat
     let (mut events, initial) = with_running_server(&runtime, |server| {
         let initial = CaptureUiDelta::Reset { session_id: server.status().session_id, summaries: server.snapshot() };
         (server.subscribe_ui_events(), initial)
+    })?;
+    channel.send(vec![initial]).map_err(|error| error.to_string())?;
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(deltas) => {
+                    if channel.send(deltas).is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => break,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn subscribe_database_capture_deltas(channel: Channel<Vec<DatabaseUiDelta>>, runtime: State<'_, NativeCaptureRuntime>) -> Result<(), String> {
+    let (mut events, initial) = with_running_server(&runtime, |server| {
+        let initial = DatabaseUiDelta::Reset { session_id: server.status().session_id, summaries: server.database_snapshot() };
+        (server.subscribe_database_ui_events(), initial)
     })?;
     channel.send(vec![initial]).map_err(|error| error.to_string())?;
     tauri::async_runtime::spawn(async move {
@@ -212,12 +245,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             capture_status,
             capture_snapshot,
+            database_capture_snapshot,
             capture_exchange,
+            database_capture_command,
             capture_body_chunk,
             set_capture_recording,
             clear_capture_session,
             replay_request,
             subscribe_capture_deltas,
+            subscribe_database_capture_deltas,
             capture_listener_status,
             start_capture_listener,
             stop_capture_listener,

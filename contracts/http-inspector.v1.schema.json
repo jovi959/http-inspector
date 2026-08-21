@@ -10,6 +10,12 @@
     "client_hello": {
       "$ref": "#/$defs/ClientHello"
     },
+    "database_command": {
+      "$ref": "#/$defs/DatabaseCommand"
+    },
+    "database_ui_delta": {
+      "$ref": "#/$defs/DatabaseUiDelta"
+    },
     "exchange": {
       "$ref": "#/$defs/HttpExchange"
     },
@@ -25,7 +31,9 @@
     "client_hello",
     "capture_message",
     "server_message",
-    "ui_delta"
+    "ui_delta",
+    "database_command",
+    "database_ui_delta"
   ],
   "$defs": {
     "AddressDetails": {
@@ -472,6 +480,276 @@
         {
           "type": "object",
           "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "commandType": {
+              "type": "string"
+            },
+            "correlation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CorrelationContext"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dataSource": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "databaseName": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "operation": {
+              "type": "string"
+            },
+            "parameters": {
+              "$ref": "#/$defs/DatabaseParameterCapture"
+            },
+            "primaryTarget": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "query": {
+              "$ref": "#/$defs/DatabaseQueryCapture"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "database.command.started"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "commandId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "provider",
+            "databaseName",
+            "commandType",
+            "operation",
+            "primaryTarget",
+            "query",
+            "parameters"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/DatabaseResultAvailability"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "totalDuration": {
+              "$ref": "#/$defs/DurationValue"
+            },
+            "type": {
+              "type": "string",
+              "const": "database.command.completed"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "commandId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "totalDuration",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "failure": {
+              "$ref": "#/$defs/DatabaseCommandFailure"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/DatabaseResultAvailability"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "totalDuration": {
+              "$ref": "#/$defs/DurationValue"
+            },
+            "type": {
+              "type": "string",
+              "const": "database.command.failed"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "commandId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "failure",
+            "totalDuration",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "commandId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/DatabaseResultAvailability"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "totalDuration": {
+              "$ref": "#/$defs/DurationValue"
+            },
+            "type": {
+              "type": "string",
+              "const": "database.command.cancelled"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "commandId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "origin",
+            "totalDuration",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "command": {
+              "$ref": "#/$defs/DatabaseCommand"
+            },
+            "commandId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "schemaVersion": {
+              "$ref": "#/$defs/SchemaVersion"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "sourceInstanceId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "database.command.snapshot"
+            }
+          },
+          "required": [
+            "type",
+            "schemaVersion",
+            "messageId",
+            "commandId",
+            "sourceInstanceId",
+            "revision",
+            "sentAt",
+            "command"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "droppedCount": {
               "type": "integer",
               "format": "uint64",
@@ -773,6 +1051,499 @@
         }
       }
     },
+    "DatabaseCaptureAvailability": {
+      "description": "Availability is explicit so an unsafe value is never mistaken for an empty captured value.",
+      "type": "string",
+      "enum": [
+        "captured",
+        "unavailable"
+      ]
+    },
+    "DatabaseCommand": {
+      "description": "Canonical database command detail stored separately from HTTP exchanges.",
+      "type": "object",
+      "properties": {
+        "arrivalSequence": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "commandType": {
+          "type": "string"
+        },
+        "correlation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CorrelationContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dataSource": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "databaseName": {
+          "type": "string"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DatabaseCommandFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/ExchangeLifecycle"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/DatabaseParameterCapture"
+        },
+        "primaryTarget": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "query": {
+          "$ref": "#/$defs/DatabaseQueryCapture"
+        },
+        "result": {
+          "$ref": "#/$defs/DatabaseResultAvailability"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/SchemaVersion"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/CaptureSource"
+        },
+        "totalDuration": {
+          "$ref": "#/$defs/DurationValue"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "sessionId",
+        "revision",
+        "arrivalSequence",
+        "source",
+        "lifecycle",
+        "provider",
+        "databaseName",
+        "commandType",
+        "operation",
+        "primaryTarget",
+        "query",
+        "parameters",
+        "totalDuration",
+        "result"
+      ]
+    },
+    "DatabaseCommandFailure": {
+      "description": "Provider failures are separate from ordinary result metadata and remain visible in the database inspector.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "errorType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "message"
+      ]
+    },
+    "DatabaseCommandKey": {
+      "description": "The pair prevents different monitored processes from colliding on a database command ID.",
+      "type": "object",
+      "properties": {
+        "commandId": {
+          "type": "string"
+        },
+        "sourceInstanceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceInstanceId",
+        "commandId"
+      ]
+    },
+    "DatabaseCommandSummary": {
+      "description": "UI streaming remains small by sending a command summary instead of its query and parameter values.",
+      "type": "object",
+      "properties": {
+        "arrivalSequence": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "commandType": {
+          "type": "string"
+        },
+        "dataSource": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "databaseName": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "info": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "$ref": "#/$defs/DatabaseCommandKey"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/ExchangeLifecycle"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "primaryTarget": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "sourceName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "revision",
+        "arrivalSequence",
+        "lifecycle",
+        "provider",
+        "databaseName",
+        "commandType",
+        "operation",
+        "primaryTarget",
+        "sourceName"
+      ]
+    },
+    "DatabaseParameter": {
+      "description": "One database parameter preserves provider metadata without assuming every value is serializable.",
+      "type": "object",
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/DatabaseCaptureAvailability"
+        },
+        "dbType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "direction": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "precision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scale": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "value": true
+      },
+      "required": [
+        "name",
+        "availability"
+      ]
+    },
+    "DatabaseParameterCapture": {
+      "description": "Command-level parameter availability distinguishes a known empty parameter list from unavailable capture.",
+      "type": "object",
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/DatabaseCaptureAvailability"
+        },
+        "capturedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "observedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DatabaseParameter"
+          }
+        }
+      },
+      "required": [
+        "availability",
+        "values"
+      ]
+    },
+    "DatabaseQueryCapture": {
+      "description": "Keeps the original SQL intact when it is safe to retain, with a reason when it is not.",
+      "type": "object",
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/DatabaseCaptureAvailability"
+        },
+        "capturedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "observedByteLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "availability"
+      ]
+    },
+    "DatabaseResultAvailability": {
+      "description": "The database command detail intentionally does not imply that result rows were captured.",
+      "type": "object",
+      "properties": {
+        "availability": {
+          "$ref": "#/$defs/DatabaseCaptureAvailability"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "availability"
+      ]
+    },
+    "DatabaseUiDelta": {
+      "description": "Database UI deltas are deliberately independent from the HTTP capture delta contract.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "upsert"
+            },
+            "summary": {
+              "$ref": "#/$defs/DatabaseCommandSummary"
+            }
+          },
+          "required": [
+            "kind",
+            "summary"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/DatabaseCommandKey"
+            },
+            "kind": {
+              "type": "string",
+              "const": "remove"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reset"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "summaries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DatabaseCommandSummary"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "sessionId",
+            "summaries"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "commandCount": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "status"
+            },
+            "retainedBytes": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "retentionBlockedByInFlight": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "commandCount",
+            "retainedBytes",
+            "retentionBlockedByInFlight"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "key": {
+              "$ref": "#/$defs/DatabaseCommandKey"
+            },
+            "kind": {
+              "type": "string",
+              "const": "detailInvalidated"
+            },
+            "revision": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "key",
+            "revision"
+          ]
+        }
+      ]
+    },
     "DurationValue": {
       "description": "A duration is present only when known; provenance explains its source instead of using zero.",
       "type": "object",
@@ -1017,6 +1788,15 @@
       "description": "The inspector response after a successful protocol negotiation.",
       "type": "object",
       "properties": {
+        "acceptedCapabilities": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
         "connectionId": {
           "type": "string"
         },

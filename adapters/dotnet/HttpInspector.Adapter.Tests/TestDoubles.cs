@@ -269,11 +269,12 @@ internal static class TestValues
         Environment = environment ?? new FakeEnvironment(),
     };
 
-    public static AdapterConfig Config(string? endpoint = Endpoint, int queueCapacity = 256) => new()
+    public static AdapterConfig Config(string? endpoint = Endpoint, int queueCapacity = 256, int databaseQueueCapacity = 128) => new()
     {
         Endpoint = endpoint,
         ApplicationName = "test-application",
         ServiceName = "test-service",
         QueueCapacity = queueCapacity,
+        DatabaseQueueCapacity = databaseQueueCapacity,
     };
 }

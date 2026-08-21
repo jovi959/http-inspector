@@ -19,6 +19,9 @@ export function useAppShortcuts({ workspaceView, setWorkspaceView, clearSelectio
       } else if ((event.metaKey || event.ctrlKey) && event.key === "2") {
         event.preventDefault();
         setWorkspaceView("sequence");
+      } else if ((event.metaKey || event.ctrlKey) && event.key === "3") {
+        event.preventDefault();
+        setWorkspaceView("database");
       } else if (event.key === "Escape" && workspaceView) {
         event.preventDefault();
         clearSelection();
