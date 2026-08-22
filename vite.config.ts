@@ -3,6 +3,8 @@ import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const inspectorApiPort = process.env.HTTP_INSPECTOR_API_PORT ?? "53662";
+
 // Tauri uses the same Vite assets during native development and production builds.
 export default defineConfig({
   plugins: [react()],
@@ -17,8 +19,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // Browser development stays same-origin while the Rust process owns every capture endpoint.
-      "/api": { target: "http://127.0.0.1:53662", changeOrigin: false },
-      "/ws": { target: "ws://127.0.0.1:53662", ws: true, changeOrigin: false },
+      "/api": { target: `http://127.0.0.1:${inspectorApiPort}`, changeOrigin: false },
+      "/ws": { target: `ws://127.0.0.1:${inspectorApiPort}`, ws: true, changeOrigin: false },
     },
     watch: {
       ignored: ["**/src-tauri/**", "**/target/**"],

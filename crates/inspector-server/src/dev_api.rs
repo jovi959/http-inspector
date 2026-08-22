@@ -15,6 +15,7 @@ use crate::{ReplayExecutionReceipt, ReplayRequest, ingress::{ServerState, source
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StatusResponse {
     session_id: String,
+    capture_endpoint: String,
     recording: bool,
     exchange_count: usize,
     connected_sources: u32,
@@ -157,6 +158,7 @@ fn status_response(state: &ServerState) -> StatusResponse {
     let status = state.hub.status();
     StatusResponse {
         session_id: status.session_id,
+        capture_endpoint: state.capture_endpoint.clone(),
         recording: status.recording,
         exchange_count: status.exchange_count,
         connected_sources: source_count(state),

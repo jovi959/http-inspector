@@ -11,6 +11,7 @@ import type { CaptureUiDelta, ExchangeKey, HttpBody, HttpExchange, HttpExchangeS
 
 interface BrowserStatusResponse {
   readonly sessionId: string;
+  readonly captureEndpoint?: string;
   readonly recording: boolean;
   readonly connectedSources: number;
   readonly droppedCount?: number;
@@ -25,6 +26,12 @@ export class BrowserCaptureDataSource implements CaptureDataSource {
   async getStatus(): Promise<CaptureStatus> {
     const response = await this.request<BrowserStatusResponse>("/api/status");
     return statusFromResponse(response, "connected");
+  }
+
+  /** Reads the service-owned listener address so hosted integration never assumes the default port. */
+  async getIntegrationEndpoint(): Promise<string | null> {
+    const response = await this.request<BrowserStatusResponse>("/api/status");
+    return response.captureEndpoint ?? null;
   }
 
   async getInitialSnapshot(): Promise<CaptureSnapshot> {

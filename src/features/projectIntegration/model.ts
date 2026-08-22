@@ -20,6 +20,15 @@ export interface ProjectSelection { readonly selectionToken: string; readonly pa
 export interface ProjectChoice { readonly projectFile: string; readonly label: string; }
 export interface PackageIdentity { readonly id: string; readonly version: string; readonly file: string; readonly digest: string; readonly feed: string; }
 export interface IntegrationCoverage { readonly family: string; readonly bridge: string; readonly sourceEditsRequired: boolean; readonly count: number; readonly locations: readonly string[]; readonly note: string; }
+export interface DatabaseResultCapturePreview {
+  readonly requested: boolean;
+  readonly eligible: boolean;
+  readonly reason: string | null;
+  readonly databaseProjectFile: string | null;
+  readonly factoryFile: string | null;
+  readonly dapperLocations: readonly string[];
+  readonly dapperFiles: readonly string[];
+}
 
 export interface IntegrationPreview {
   readonly previewToken: string | null;
@@ -33,6 +42,7 @@ export interface IntegrationPreview {
   readonly package: PackageIdentity;
   readonly operations: readonly string[];
   readonly coverage: readonly IntegrationCoverage[];
+  readonly databaseResultCapture: DatabaseResultCapturePreview;
 }
 
 export interface IntegrationRecord {

@@ -35,6 +35,9 @@ http_inspector_reset_receipt() {
   RECEIPT_COMPOSITION_OWNED_HASH=""
   RECEIPT_COMPOSITION_OWNED_COUNT=""
   RECEIPT_ARTIFACT_BASELINE=""
+  RECEIPT_DATABASE_CAPTURE_ENABLED=""
+  RECEIPT_DATABASE_ADOPTION_ROOT=""
+  RECEIPT_DATABASE_CAPTURE_REUSED=""
 }
 
 http_inspector_receipt_write() {
@@ -75,6 +78,9 @@ http_inspector_receipt_write() {
     printf 'composition_owned_hash=%s\n' "$RECEIPT_COMPOSITION_OWNED_HASH"
     printf 'composition_owned_count=%s\n' "$RECEIPT_COMPOSITION_OWNED_COUNT"
     printf 'artifact_baseline=%s\n' "$RECEIPT_ARTIFACT_BASELINE"
+    printf 'database_capture_enabled=%s\n' "$RECEIPT_DATABASE_CAPTURE_ENABLED"
+    printf 'database_adoption_root=%s\n' "$RECEIPT_DATABASE_ADOPTION_ROOT"
+    printf 'database_capture_reused=%s\n' "$RECEIPT_DATABASE_CAPTURE_REUSED"
   } > "$temporary"
   mv -f "$temporary" "$receipt_path"
 }
@@ -120,15 +126,18 @@ http_inspector_receipt_load() {
       composition_owned_hash) RECEIPT_COMPOSITION_OWNED_HASH="$value" ;;
       composition_owned_count) RECEIPT_COMPOSITION_OWNED_COUNT="$value" ;;
       artifact_baseline) RECEIPT_ARTIFACT_BASELINE="$value" ;;
+      database_capture_enabled) RECEIPT_DATABASE_CAPTURE_ENABLED="$value" ;;
+      database_adoption_root) RECEIPT_DATABASE_ADOPTION_ROOT="$value" ;;
+      database_capture_reused) RECEIPT_DATABASE_CAPTURE_REUSED="$value" ;;
     esac
   done < "$receipt_path"
-  [[ "$RECEIPT_SPEC_VERSION" == "2.1.0" || "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" ]] && [[ -n "$RECEIPT_RUN_ID" && -n "$RECEIPT_PROJECT_ROOT" ]]
+  [[ "$RECEIPT_SPEC_VERSION" == "2.1.0" || "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" || "$RECEIPT_SPEC_VERSION" == "4.1.0" ]] && [[ -n "$RECEIPT_RUN_ID" && -n "$RECEIPT_PROJECT_ROOT" ]]
 }
 
 http_inspector_receipt_validate() {
   local receipt_path="$1"
   local expected_project_root="${2:-}"
-  [[ "$RECEIPT_SPEC_VERSION" == "2.1.0" || "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" ]] || http_inspector_die "Unsupported integration receipt version."
+  [[ "$RECEIPT_SPEC_VERSION" == "2.1.0" || "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" || "$RECEIPT_SPEC_VERSION" == "4.1.0" ]] || http_inspector_die "Unsupported integration receipt version."
   [[ -z "$expected_project_root" || "$RECEIPT_PROJECT_ROOT" == "$expected_project_root" ]] || http_inspector_die "Receipt belongs to another project."
   http_inspector_is_within "$receipt_path" "$RECEIPT_STATE_DIRECTORY" || http_inspector_die "Receipt is outside its recorded state directory."
   http_inspector_is_within "$RECEIPT_PROJECT_FILE" "$RECEIPT_PROJECT_ROOT" || http_inspector_die "Receipt contains an unsafe project path."
@@ -146,10 +155,14 @@ http_inspector_receipt_validate() {
       [[ "$RECEIPT_STRATEGY" == "dotnet-multiclient-nuget-bash-v4" ]] || http_inspector_die "Unsupported integration strategy."
     fi
     [[ -n "$RECEIPT_PACKAGE_ID" && -n "$RECEIPT_PACKAGE_VERSION" && -n "$RECEIPT_PACKAGE_FILE" && -n "$RECEIPT_PACKAGE_FEED" ]] || http_inspector_die "Receipt is missing package identity."
-    [[ "$RECEIPT_SPEC_VERSION" != "4.0.0" || -n "$RECEIPT_COVERAGE_JSON" ]] || http_inspector_die "Receipt is missing capture coverage inventory."
+    [[ "$RECEIPT_SPEC_VERSION" != "4.0.0" && "$RECEIPT_SPEC_VERSION" != "4.1.0" || -n "$RECEIPT_COVERAGE_JSON" ]] || http_inspector_die "Receipt is missing capture coverage inventory."
     ! http_inspector_is_within "$RECEIPT_PACKAGE_FILE" "$RECEIPT_PROJECT_ROOT" || http_inspector_die "Adapter package must remain outside the consuming project."
     ! http_inspector_is_within "$RECEIPT_PACKAGE_FEED" "$RECEIPT_PROJECT_ROOT" || http_inspector_die "Adapter package feed must remain outside the consuming project."
     http_inspector_is_within "$RECEIPT_PACKAGE_FILE" "$RECEIPT_PACKAGE_FEED" || http_inspector_die "Adapter package must be inside its recorded private feed."
+  fi
+  if [[ "$RECEIPT_DATABASE_CAPTURE_ENABLED" == "1" ]]; then
+    [[ -n "$RECEIPT_DATABASE_ADOPTION_ROOT" ]] || http_inspector_die "Receipt is missing database adoption state."
+    http_inspector_is_within "$RECEIPT_DATABASE_ADOPTION_ROOT" "$(dirname "$(dirname "$RECEIPT_PROJECT_STATE")")" || http_inspector_die "Receipt contains an unsafe database adoption path."
   fi
   http_inspector_ensure_separate_roots "$RECEIPT_PROJECT_ROOT" "$RECEIPT_PROJECT_STATE"
 }

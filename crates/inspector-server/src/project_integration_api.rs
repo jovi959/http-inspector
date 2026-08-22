@@ -20,6 +20,7 @@ pub(crate) fn router(state_root: std::path::PathBuf, current_endpoint: String) -
         .route("/api/project-integrations/apply", post(apply))
         .route("/api/project-integrations/remove", post(remove))
         .route("/api/project-integrations/recover", post(recover))
+        .route("/api/project-integrations/force-remove", post(force_remove))
         .with_state(service)
 }
 
@@ -47,6 +48,10 @@ async fn remove(State(service): State<Arc<IntegrationService>>, Json(request): J
 
 async fn recover(State(service): State<Arc<IntegrationService>>, Json(request): Json<IntegrationIdRequest>) -> Result<Json<OperationResult>, ApiError> {
     service.recover(request).map(Json).map_err(ApiError)
+}
+
+async fn force_remove(State(service): State<Arc<IntegrationService>>, Json(request): Json<IntegrationIdRequest>) -> Result<Json<OperationResult>, ApiError> {
+    service.force_remove(request).map(Json).map_err(ApiError)
 }
 
 struct ApiError(IntegrationError);

@@ -44,6 +44,8 @@ export interface CapturePreferencesSlice {
   readonly filterError: string | null;
   readonly focusedGroupId: string | null;
   readonly sequenceSort: SequenceSort | null;
+  readonly expandedStructureNodeIds: ReadonlySet<string>;
+  readonly knownStructureNodeIds: ReadonlySet<string>;
   setWorkspaceView(view: WorkspaceView): void;
   setTheme(theme: AppTheme): void;
   setPaneLayout(layout: WorkspacePaneLayout): void;
@@ -53,6 +55,8 @@ export interface CapturePreferencesSlice {
   setFilterInput(input: string): void;
   setFocusedGroupId(id: string | null): void;
   setSequenceSort(sort: SequenceSort | null): void;
+  observeStructureNodes(ids: readonly string[]): void;
+  toggleStructureNode(id: string): void;
 }
 
 export type CaptureStore = CaptureEntitiesSlice & CaptureSelectionSlice & CapturePreferencesSlice & RecomposeSlice;

@@ -6,13 +6,14 @@ export class BrowserProjectIntegrationService implements ProjectIntegrationServi
   chooseBash(): Promise<IntegrationCapabilities | null> { return Promise.resolve(null); }
   chooseProject(): Promise<ProjectSelection | null> { return Promise.resolve(null); }
   selectProject(path: string): Promise<ProjectSelection> { return request("/api/project-integrations/select", { path }); }
-  preview(selectionToken: string, endpoint: string, projectFile?: string): Promise<IntegrationPreview> {
-    return request("/api/project-integrations/preview", { selectionToken, endpoint, projectFile: projectFile ?? null });
+  preview(selectionToken: string, endpoint: string, projectFile?: string, databaseResultCapture = false): Promise<IntegrationPreview> {
+    return request("/api/project-integrations/preview", { selectionToken, endpoint, projectFile: projectFile ?? null, databaseResultCapture });
   }
   list(): Promise<IntegrationCatalog> { return request("/api/project-integrations"); }
   apply(previewToken: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/apply", { previewToken }); }
   remove(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/remove", { integrationId }); }
   recover(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/recover", { integrationId }); }
+  forceRemove(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/force-remove", { integrationId }); }
 }
 
 async function request<T>(path: string, body?: unknown): Promise<T> {

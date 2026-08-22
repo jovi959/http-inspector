@@ -52,7 +52,15 @@ fn database_lifecycle_is_retained_independently_from_http_summaries() {
         revision: 2,
         sent_at: "2026-08-21T12:00:00.050Z".into(),
         total_duration: DurationValue { milliseconds: Some(50), provenance: CaptureProvenance::Measured },
-        result: DatabaseResultAvailability { availability: DatabaseCaptureAvailability::Unavailable, reason: Some("result rows are not captured".into()) },
+        result: DatabaseResultAvailability {
+            availability: DatabaseCaptureAvailability::Unavailable,
+            reason: Some("result rows are not captured".into()),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            rows_observed: None,
+            rows_captured: None,
+            truncated: false,
+        },
     };
     hub.ingest(&source, "2026-08-21T12:00:00.051Z", completed).expect("database completion should merge");
 

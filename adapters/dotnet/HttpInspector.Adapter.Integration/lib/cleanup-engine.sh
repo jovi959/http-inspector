@@ -45,9 +45,44 @@ http_inspector_cleanup_file() {
   return 0
 }
 
+http_inspector_force_cleanup_file() {
+  local kind="$1"
+  local target="$2"
+  local owned_count="$3"
+  local run_id="$4"
+  local work_directory="$5"
+  local current_signature cleaned newline_style
+
+  [[ -f "$target" ]] || return 2
+  current_signature="HTTP_INSPECTOR_INJECTION:${run_id}:"
+  if LC_ALL=C grep -Fq "$current_signature" "$target"; then
+    cleaned="$work_directory/${kind}-force-cleaned"
+    if [[ "$kind" == "project" ]]; then
+      http_inspector_remove_project_blocks "$target" "$cleaned" "$run_id" || return 4
+    elif [[ "$RECEIPT_STRATEGY" == "dotnet-multiclient-nuget-bash-v4" ]]; then
+      http_inspector_remove_service_registration_blocks "$target" "$cleaned" "$run_id" "$owned_count" || return 4
+    else
+      newline_style="$(http_inspector_detect_newline "$target")"
+      http_inspector_remove_composition_blocks "$target" "$cleaned" "$run_id" "$owned_count" "$newline_style" || return 4
+    fi
+    http_inspector_atomic_copy "$cleaned" "$target"
+    return 0
+  fi
+
+  # A receipt can outlive source that was independently restored. Retire it only when no
+  # unmarked inspector code remains; this never removes developer-authored code.
+  if [[ "$kind" == "project" ]]; then
+    LC_ALL=C grep -Eq 'HttpInspector\.Adapter|HTTP_INSPECTOR_INJECTION:' "$target" && return 4
+  else
+    LC_ALL=C grep -Eq 'using[[:space:]]+HttpInspector\.Adapter|AddHttpInspectorAdapter|HTTP_INSPECTOR_INJECTION:' "$target" && return 4
+  fi
+  return 0
+}
+
 http_inspector_cleanup_receipt() {
   local receipt_path="$1"
   local expected_project_root="${2:-}"
+  local force_cleanup="${3:-0}"
   local project_result=0
   local composition_result=0
   local pointer active_value
@@ -60,8 +95,25 @@ http_inspector_cleanup_receipt() {
   RECEIPT_STATE="cleaning"
   http_inspector_receipt_write "$receipt_path"
 
+  if [[ "$RECEIPT_DATABASE_CAPTURE_ENABLED" == "1" ]] && ! http_inspector_database_capture_remove_participant "$RECEIPT_DATABASE_ADOPTION_ROOT" "$RECEIPT_RUN_ID"; then
+    RECEIPT_STATE="cleanupRequired"
+    http_inspector_receipt_write "$receipt_path"
+    echo "Cleanup requires attention. The shared database capture files changed after integration and were left untouched." >&2
+    return 1
+  fi
+
   http_inspector_cleanup_file project "$RECEIPT_PROJECT_FILE" "$RECEIPT_PROJECT_BACKUP" "$RECEIPT_PROJECT_BEFORE_HASH" "$RECEIPT_PROJECT_AFTER_HASH" "$RECEIPT_PROJECT_OWNED_HASH" "$RECEIPT_PROJECT_OWNED_COUNT" "$RECEIPT_RUN_ID" "$RECEIPT_STATE_DIRECTORY" || project_result=$?
+  if [[ $project_result -ne 0 && "$force_cleanup" == "1" ]]; then
+    if http_inspector_force_cleanup_file project "$RECEIPT_PROJECT_FILE" "$RECEIPT_PROJECT_OWNED_COUNT" "$RECEIPT_RUN_ID" "$RECEIPT_STATE_DIRECTORY"; then
+      project_result=0
+    fi
+  fi
   http_inspector_cleanup_file composition "$RECEIPT_COMPOSITION_FILE" "$RECEIPT_COMPOSITION_BACKUP" "$RECEIPT_COMPOSITION_BEFORE_HASH" "$RECEIPT_COMPOSITION_AFTER_HASH" "$RECEIPT_COMPOSITION_OWNED_HASH" "$RECEIPT_COMPOSITION_OWNED_COUNT" "$RECEIPT_RUN_ID" "$RECEIPT_STATE_DIRECTORY" || composition_result=$?
+  if [[ $composition_result -ne 0 && "$force_cleanup" == "1" ]]; then
+    if http_inspector_force_cleanup_file composition "$RECEIPT_COMPOSITION_FILE" "$RECEIPT_COMPOSITION_OWNED_COUNT" "$RECEIPT_RUN_ID" "$RECEIPT_STATE_DIRECTORY"; then
+      composition_result=0
+    fi
+  fi
 
   if [[ $project_result -ne 0 || $composition_result -ne 0 ]]; then
     RECEIPT_STATE="cleanupRequired"
@@ -82,5 +134,9 @@ http_inspector_cleanup_receipt() {
     [[ "$active_value" != "$receipt_path" ]] || rm -f "$pointer"
   fi
   http_inspector_safe_remove_run_directory "$RECEIPT_STATE_DIRECTORY" "$RECEIPT_PROJECT_STATE"
-  echo "Temporary HTTP Inspector integration was removed. Restored the recorded project and composition files."
+  if [[ "$force_cleanup" == "1" ]]; then
+    echo "Temporary HTTP Inspector integration was force-removed by deleting only this run's markers or retiring an already-clean source receipt."
+  else
+    echo "Temporary HTTP Inspector integration was removed. Restored the recorded project and composition files."
+  fi
 }

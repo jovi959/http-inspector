@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, State, ipc::Channel};
 
 mod project_integration;
-use project_integration::{NativeProjectIntegration, integration_apply, integration_capabilities, integration_choose_bash, integration_choose_project, integration_list, integration_preview, integration_recover, integration_remove, integration_select_project};
+use project_integration::{NativeProjectIntegration, integration_apply, integration_capabilities, integration_choose_bash, integration_choose_project, integration_force_remove, integration_list, integration_preview, integration_recover, integration_remove, integration_select_project};
 
 const DEFAULT_CAPTURE_PORT: u16 = 53662;
 
@@ -266,6 +266,7 @@ pub fn run() {
             integration_list,
             integration_remove,
             integration_recover,
+            integration_force_remove,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build HTTP Inspector");

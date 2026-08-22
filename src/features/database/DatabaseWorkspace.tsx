@@ -2,14 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { DatabaseCaptureDataSource } from "@/data/ports/DatabaseCaptureDataSource";
 import type { DatabaseCommand, DatabaseCommandKey, DatabaseCommandSummary, DatabaseUiDelta } from "@/generated/contracts";
+import { StructureDatabaseIcon } from "@/features/structure/StructureTreeIcons";
 
 interface DatabaseWorkspaceProps {
   readonly dataSource: DatabaseCaptureDataSource | null;
+  readonly collapsedNodeIds: ReadonlySet<string>;
   onCommandSelected(command: DatabaseCommand | null): void;
+  onNodeCollapsedChange(id: string, collapsed: boolean): void;
 }
 
 /** Renders a dedicated hierarchy and detail view without widening HTTP capture state. */
-export function DatabaseWorkspace({ dataSource, onCommandSelected }: DatabaseWorkspaceProps) {
+export function DatabaseWorkspace({ dataSource, collapsedNodeIds, onCommandSelected, onNodeCollapsedChange }: DatabaseWorkspaceProps) {
   const [summaries, setSummaries] = useState<readonly DatabaseCommandSummary[]>([]);
   const [selectedKey, setSelectedKey] = useState<DatabaseCommandKey | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +49,10 @@ export function DatabaseWorkspace({ dataSource, onCommandSelected }: DatabaseWor
       {error && <p className="database-error">{error}</p>}
       <div className="database-tree" aria-label="Database command hierarchy">
         {hierarchy.length === 0 ? <p className="empty-copy">No database commands have been captured in this session.</p> : hierarchy.map((database) => (
-          <details key={database.id} open>
-            <summary>{database.label}</summary>
+          <details key={database.id} open={!collapsedNodeIds.has(database.id)} onToggle={(event) => onNodeCollapsedChange(database.id, !event.currentTarget.open)}>
+            <summary className="database-root-summary"><StructureDatabaseIcon />{database.label}</summary>
             {database.targets.map((target) => (
-              <details key={target.target} open>
+              <details key={target.target} open={!collapsedNodeIds.has(targetNodeId(database.id, target.target))} onToggle={(event) => onNodeCollapsedChange(targetNodeId(database.id, target.target), !event.currentTarget.open)}>
                 <summary>{target.target}</summary>
                 {target.commands.map((summary) => <button className={sameKey(selectedKey, summary.key) ? "database-command-row is-selected" : "database-command-row"} key={keyOf(summary.key)} type="button" onClick={() => {
                   setSelectedKey(summary.key);
@@ -65,13 +68,13 @@ export function DatabaseWorkspace({ dataSource, onCommandSelected }: DatabaseWor
 }
 
 export function DatabaseCommandInspector({ command }: { readonly command: DatabaseCommand | null }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "query" | "parameters">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "query" | "parameters" | "response">("overview");
   useEffect(() => setActiveTab("overview"), [command?.id]);
   if (!command) return <section className="database-command-inspector panel"><div className="panel-heading"><h2>Database command</h2></div><p className="empty-copy">Select a database command to inspect its SQL and parameters.</p></section>;
   return <section className="database-command-inspector panel">
     <div className="database-detail-heading"><strong>{command.primaryTarget}</strong><span>{command.provider}</span></div>
     <nav className="database-tabs" aria-label="Database command detail">
-      {(["overview", "query", "parameters"] as const).map((tab) => <button className={activeTab === tab ? "is-active" : ""} key={tab} type="button" onClick={() => setActiveTab(tab)}>{tab}</button>)}
+      {(["overview", "query", "parameters", "response"] as const).map((tab) => <button className={activeTab === tab ? "is-active" : ""} key={tab} type="button" onClick={() => setActiveTab(tab)}>{tab}</button>)}
     </nav>
     {activeTab === "overview" && <dl className="database-overview">
       <dt>Database</dt><dd>{command.databaseName}</dd>
@@ -80,12 +83,35 @@ export function DatabaseCommandInspector({ command }: { readonly command: Databa
       <dt>Command type</dt><dd>{command.commandType}</dd>
       <dt>Lifecycle</dt><dd>{command.lifecycle.state}</dd>
       <dt>Duration</dt><dd>{command.totalDuration.milliseconds === null ? "Unavailable" : `${command.totalDuration.milliseconds} ms`}</dd>
-      <dt>Result rows</dt><dd>{command.result.reason ?? "Unavailable"}</dd>
+      <dt>Result</dt><dd>{resultSummary(command)}</dd>
       {command.failure && <><dt>Failure</dt><dd>{command.failure.message}</dd></>}
     </dl>}
     {activeTab === "query" && <pre className="database-code">{command.query.value ?? command.query.reason ?? "Query capture is unavailable."}</pre>}
     {activeTab === "parameters" && (command.parameters.availability === "unavailable" ? <p className="empty-copy">{command.parameters.reason ?? "Parameter capture is unavailable."}</p> : <div className="database-parameters"><table><thead><tr><th>Name</th><th>Value</th><th>Type</th><th>Direction</th></tr></thead><tbody>{command.parameters.values.length === 0 ? <tr><td colSpan={4}>No parameters</td></tr> : command.parameters.values.map((parameter, index) => <tr key={`${parameter.name}-${index}`}><td>{parameter.name}</td><td>{parameter.value === undefined ? parameter.reason ?? "Unavailable" : JSON.stringify(parameter.value)}</td><td>{parameter.dbType ?? ""}</td><td>{parameter.direction ?? ""}</td></tr>)}</tbody></table></div>)}
+    {activeTab === "response" && <DatabaseResponse command={command} />}
   </section>;
+}
+
+function DatabaseResponse({ command }: { readonly command: DatabaseCommand }) {
+  const { result } = command;
+  if (result.availability !== "captured") return <p className="empty-copy">{result.reason ?? "Result rows are unavailable for this command."}</p>;
+  return <div className="database-response">
+    <p className="database-response-summary">{result.rowsCaptured ?? result.rows.length} captured of {result.rowsObserved ?? result.rows.length} observed rows{result.truncated ? " · Preview truncated" : ""}{result.reason ? ` · ${result.reason}` : ""}</p>
+    {result.columns.length === 0 ? <p className="empty-copy">No tabular result was returned.</p> : <div className="database-results"><table><thead><tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{result.rows.length === 0 ? <tr><td colSpan={result.columns.length}>No rows</td></tr> : result.rows.map((row, rowIndex) => <tr key={rowIndex}>{result.columns.map((column, columnIndex) => <td key={`${column}-${columnIndex}`}>{formatResultValue(row[columnIndex])}</td>)}</tr>)}</tbody></table></div>}
+  </div>;
+}
+
+function resultSummary(command: DatabaseCommand): string {
+  const { result } = command;
+  if (result.availability !== "captured") return result.reason ?? "Unavailable";
+  const captured = result.rowsCaptured ?? result.rows.length;
+  const observed = result.rowsObserved ?? captured;
+  return `${captured}/${observed} rows${result.truncated ? " (truncated)" : ""}`;
+}
+
+function formatResultValue(value: unknown): string {
+  if (value === null) return "NULL";
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 interface DatabaseGroup {
@@ -123,6 +149,10 @@ function applyDatabaseDeltas(current: readonly DatabaseCommandSummary[], deltas:
 
 function keyOf(key: DatabaseCommandKey): string {
   return `${key.sourceInstanceId}\u0000${key.commandId}`;
+}
+
+function targetNodeId(databaseId: string, target: string): string {
+  return `${databaseId}\u0000${target}`;
 }
 
 function sameKey(left: DatabaseCommandKey | null, right: DatabaseCommandKey): boolean {

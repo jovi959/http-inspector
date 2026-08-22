@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 namespace HttpInspector.Adapter;
 
 /// Observes Microsoft.Data.SqlClient diagnostics globally so application repositories remain unchanged.
-internal sealed class SqlClientDiagnosticBridge(HttpInspectorAdapter adapter) : IHostedService, IObserver<DiagnosticListener>, IObserver<KeyValuePair<string, object?>>, IDisposable
+internal sealed class SqlClientDiagnosticBridge(HttpInspectorAdapter adapter, DatabaseCommandOwnership ownership) : IHostedService, IObserver<DiagnosticListener>, IObserver<KeyValuePair<string, object?>>, IDisposable
 {
     private const string ListenerName = "SqlClientDiagnosticListener";
     private readonly ConcurrentDictionary<DbCommand, DatabaseCommandHandle> _commands = new(ReferenceEqualityComparer.Instance);
@@ -77,7 +77,7 @@ internal sealed class SqlClientDiagnosticBridge(HttpInspectorAdapter adapter) : 
 
     private void ObserveStart(DbCommand? command)
     {
-        if (command is null || _commands.ContainsKey(command))
+        if (command is null || ownership.IsOwned(command) || _commands.ContainsKey(command))
         {
             return;
         }

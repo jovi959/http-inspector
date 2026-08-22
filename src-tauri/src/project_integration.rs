@@ -61,3 +61,8 @@ pub(crate) fn integration_remove(request: IntegrationIdRequest, runtime: State<'
 pub(crate) fn integration_recover(request: IntegrationIdRequest, runtime: State<'_, NativeProjectIntegration>) -> Result<OperationResult, IntegrationError> {
     runtime.0.recover(request)
 }
+
+#[tauri::command]
+pub(crate) fn integration_force_remove(request: IntegrationIdRequest, runtime: State<'_, NativeProjectIntegration>) -> Result<OperationResult, IntegrationError> {
+    runtime.0.force_remove(request)
+}

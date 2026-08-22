@@ -10,6 +10,7 @@ use crate::{ReplayExecutionReceipt, ReplayRequest, ServerConfig, dev_api, ingres
 #[derive(Clone)]
 pub(crate) struct ServerState {
     pub hub: CaptureHub,
+    pub capture_endpoint: String,
     pub maximum_message_bytes: usize,
     pub maximum_body_bytes: u64,
     pub ui_events: broadcast::Sender<Vec<inspector_core::domain::CaptureUiDelta>>,
@@ -145,6 +146,8 @@ pub async fn start(config: ServerConfig) -> Result<RunningServer, std::io::Error
     let processor = tokio::spawn(process_capture_queue(hub.clone(), ui_events.clone(), database_ui_events.clone(), receiver));
     let state = ServerState {
         hub,
+        // Hosted integrations must use the address selected by this listener, not a UI default port.
+        capture_endpoint: loopback_capture_endpoint(address),
         maximum_message_bytes: config.maximum_message_bytes,
         maximum_body_bytes: config.maximum_body_bytes,
         ui_events,

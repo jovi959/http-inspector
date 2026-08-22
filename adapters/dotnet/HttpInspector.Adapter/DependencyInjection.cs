@@ -19,6 +19,10 @@ public sealed class HttpInspectorOptions
     public int QueueCapacity { get; set; } = 256;
     public int DatabaseQueueCapacity { get; set; } = 128;
     public ulong MaximumDatabaseCaptureBytes { get; set; } = 1024UL * 1024UL;
+    public ulong MaximumDatabaseResultCaptureBytes { get; set; } = 256UL * 1024UL;
+    public int MaximumDatabaseResultRows { get; set; } = 100;
+    public ulong MaximumDatabaseResultCellBytes { get; set; } = 16UL * 1024UL;
+    public int MaximumDatabaseResultColumns { get; set; } = 50;
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     internal AdapterConfig ToAdapterConfig() => new()
@@ -46,6 +50,12 @@ public static class HttpInspectorServiceCollectionExtensions
         var options = new HttpInspectorOptions();
         configure?.Invoke(options);
         services.TryAddSingleton(_ => HttpInspectorAdapter.Create(options.ToAdapterConfig()));
+        // Reader-aware capture is opt-in: projects use this service only from their Dapper connection factory path.
+        services.TryAddSingleton<DatabaseCommandOwnership>();
+        services.TryAddSingleton<IHttpInspectorDatabaseCapture>(provider => new HttpInspectorDatabaseCapture(
+            provider.GetRequiredService<HttpInspectorAdapter>(), provider.GetRequiredService<DatabaseCommandOwnership>(),
+            options.MaximumDatabaseResultCaptureBytes, options.MaximumDatabaseResultRows, options.MaximumDatabaseResultCellBytes,
+            options.MaximumDatabaseResultColumns));
         services.TryAddTransient<HttpInspectorHandler>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter, HttpInspectorMessageHandlerBuilderFilter>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SystemNetHttpDiagnosticBridge>());

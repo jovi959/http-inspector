@@ -1413,17 +1413,54 @@
       ]
     },
     "DatabaseResultAvailability": {
-      "description": "The database command detail intentionally does not imply that result rows were captured.",
+      "description": "Captured result data is bounded and explicit so passive provider diagnostics remain valid.",
       "type": "object",
       "properties": {
         "availability": {
           "$ref": "#/$defs/DatabaseCaptureAvailability"
+        },
+        "columns": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
         },
         "reason": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "rows": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "array",
+            "items": true
+          }
+        },
+        "rowsCaptured": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "default": null,
+          "minimum": 0
+        },
+        "rowsObserved": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "default": null,
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [

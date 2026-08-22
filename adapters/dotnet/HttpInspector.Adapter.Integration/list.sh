@@ -55,7 +55,7 @@ while IFS= read -r pointer; do
     [[ -n "$strategy" ]] || strategy="dotnet-ihttpclientfactory-bash-v2"
     if [[ "$RECEIPT_SPEC_VERSION" == "2.1.0" && -f "$RECEIPT_ADAPTER_BINARY" ]]; then
       payload_available=true
-    elif [[ ( "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" ) && -f "$RECEIPT_PACKAGE_FILE" ]]; then
+    elif [[ ( "$RECEIPT_SPEC_VERSION" == "3.0.0" || "$RECEIPT_SPEC_VERSION" == "4.0.0" || "$RECEIPT_SPEC_VERSION" == "4.1.0" ) && -f "$RECEIPT_PACKAGE_FILE" ]]; then
       payload_available=true
     fi
     [[ -d "$project_root" ]] || state="missingProject"

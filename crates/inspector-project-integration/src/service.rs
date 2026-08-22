@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}, sync::{Arc
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{ApplyRequest, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationCoverage, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationTransport, OperationResult, PackageIdentity, PreviewRequest, ProjectChoice, ProjectSelection, SelectBashRequest, SelectProjectRequest, bash::{discover_bash, run_json, select_bash, to_bash_path, to_native_path}, payload::{EMBEDDED_ADAPTER_VERSION, EMBEDDED_PACKAGE_ID, EMBEDDED_PACKAGE_VERSION, EMBEDDED_PAYLOAD_DIGEST, MaterializedPayload, garbage_collect, materialize}};
+use crate::{ApplyRequest, DatabaseResultCapturePreview, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationCoverage, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationTransport, OperationResult, PackageIdentity, PreviewRequest, ProjectChoice, ProjectSelection, SelectBashRequest, SelectProjectRequest, bash::{discover_bash, run_json, select_bash, to_bash_path, to_native_path}, payload::{EMBEDDED_ADAPTER_VERSION, EMBEDDED_PACKAGE_ID, EMBEDDED_PACKAGE_VERSION, EMBEDDED_PAYLOAD_DIGEST, MaterializedPayload, garbage_collect, materialize}};
 
 #[derive(Clone)]
 pub struct IntegrationServiceConfig {
@@ -17,7 +17,7 @@ pub struct IntegrationServiceConfig {
 pub type CurrentEndpoint = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
 struct Selection { path: PathBuf }
-struct PreviewState { path: PathBuf, project_file: Option<String>, endpoint: String, file_hashes: Vec<(PathBuf, String)>, created_at: Instant }
+struct PreviewState { path: PathBuf, project_file: Option<String>, endpoint: String, database_result_capture: bool, file_hashes: Vec<(PathBuf, String)>, created_at: Instant }
 
 pub struct IntegrationService {
     config: IntegrationServiceConfig,
@@ -63,18 +63,33 @@ impl IntegrationService {
         self.ensure_endpoint_current(&request.endpoint)?;
         let path = self.selections.lock().map_err(lock_error)?.get(&request.selection_token).map(|selection| selection.path.clone())
             .ok_or_else(|| IntegrationError::new("selectionExpired", "Select the project folder again."))?;
-        let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), request.endpoint.clone(), "--json".into()];
+        let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), request.endpoint.clone(), "--state-root".into(), self.config.state_root.display().to_string(), "--json".into()];
         if let Some(project_file) = &request.project_file { arguments.extend(["--project-file".into(), project_file.clone()]); }
+        if request.database_result_capture { arguments.push("--database-result-capture".into()); }
         let value = self.run("inspect.sh", arguments)?;
         let choices = serde_json::from_value::<Vec<ProjectChoice>>(value.get("choices").cloned().unwrap_or_else(|| serde_json::json!([])))
             .map_err(|error| IntegrationError::new("invalidInspectResult", error.to_string()))?;
         let choice_required = value.get("choiceRequired").and_then(|value| value.as_bool()).unwrap_or(false);
         let preview_project_root = value.get("projectRoot").and_then(|value| value.as_str()).map(str::to_owned).unwrap_or_else(|| path.display().to_string());
-        let preview_token = if choice_required { None } else {
+        let database_result_capture: DatabaseResultCapturePreview = serde_json::from_value(value.get("databaseResultCapture").cloned().unwrap_or_else(|| serde_json::json!({
+            "requested": request.database_result_capture,
+            "eligible": !request.database_result_capture,
+            "reason": if request.database_result_capture { serde_json::Value::String("The integration script did not provide a database capture plan.".into()) } else { serde_json::Value::Null },
+            "databaseProjectFile": null,
+            "factoryFile": null,
+            "dapperLocations": [],
+            "dapperFiles": []
+        }))).map_err(|error| IntegrationError::new("invalidDatabaseCapturePreview", error.to_string()))?;
+        let mut preview_files = ["projectFile", "compositionFile"].into_iter().filter_map(|key| value.get(key).and_then(|value| value.as_str()).map(str::to_owned)).collect::<Vec<_>>();
+        if database_result_capture.requested && database_result_capture.eligible {
+            preview_files.extend(database_result_capture.database_project_file.iter().cloned());
+            preview_files.extend(database_result_capture.factory_file.iter().cloned());
+            preview_files.extend(database_result_capture.dapper_files.iter().cloned());
+        }
+        let preview_token = if choice_required || (request.database_result_capture && !database_result_capture.eligible) { None } else {
             let token = Uuid::new_v4().to_string();
-            let file_hashes = ["projectFile", "compositionFile"].into_iter().filter_map(|key| value.get(key).and_then(|value| value.as_str()))
-                .map(|file| hash_file(Path::new(file)).map(|hash| (PathBuf::from(file), hash))).collect::<Result<Vec<_>, _>>()?;
-            self.previews.lock().map_err(lock_error)?.insert(token.clone(), PreviewState { path: path.clone(), project_file: request.project_file.clone(), endpoint: request.endpoint.clone(), file_hashes, created_at: Instant::now() });
+            let file_hashes = preview_files.iter().map(|file| hash_file(Path::new(file)).map(|hash| (PathBuf::from(file), hash))).collect::<Result<Vec<_>, _>>()?;
+            self.previews.lock().map_err(lock_error)?.insert(token.clone(), PreviewState { path: path.clone(), project_file: request.project_file.clone(), endpoint: request.endpoint.clone(), database_result_capture: request.database_result_capture, file_hashes, created_at: Instant::now() });
             Some(token)
         };
         let package: PackageIdentity = serde_json::from_value(value.get("package").cloned().unwrap_or_else(|| self.package_json())).map_err(|error| IntegrationError::new("invalidPackageIdentity", error.to_string()))?;
@@ -83,7 +98,7 @@ impl IntegrationService {
         Ok(IntegrationPreview { preview_token, choice_required, choices, project_root: preview_project_root,
             project_file: value.get("projectFile").and_then(|value| value.as_str()).map(str::to_owned), composition_file: value.get("compositionFile").and_then(|value| value.as_str()).map(str::to_owned),
             strategy: value.get("strategy").and_then(|value| value.as_str()).unwrap_or("dotnet-multiclient-nuget-bash-v4").to_owned(), endpoint: request.endpoint, package,
-            operations: vec!["Add project-scoped private local NuGet feed".into(), "Add exact private PackageReference".into(), "Register one host-wide capture bridge for IHttpClientFactory, Refit, direct HttpClient, and RestSharp".into()], coverage })
+            operations: integration_operations(request.database_result_capture), coverage, database_result_capture })
     }
 
     pub fn apply(&self, request: ApplyRequest) -> Result<OperationResult, IntegrationError> {
@@ -98,7 +113,7 @@ impl IntegrationService {
             }
         }
         let _operation = self.acquire_operation(preview.path.clone())?;
-        let mut arguments = self.operation_arguments(&preview.path, preview.project_file.as_deref(), &preview.endpoint);
+        let mut arguments = self.operation_arguments(&preview.path, preview.project_file.as_deref(), &preview.endpoint, preview.database_result_capture);
         arguments.push("--json".into());
         serde_json::from_value(self.run("pre-run.sh", arguments)?).map_err(|error| IntegrationError::new("invalidApplyResult", error.to_string()))
     }
@@ -115,6 +130,7 @@ impl IntegrationService {
 
     pub fn remove(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> { self.cleanup(request, "post-run.sh") }
     pub fn recover(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> { self.cleanup(request, "recover.sh") }
+    pub fn force_remove(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> { self.force_cleanup(request) }
 
     fn cleanup(&self, request: IntegrationIdRequest, script: &str) -> Result<OperationResult, IntegrationError> {
         let record = self.list()?.integrations.into_iter().find(|record| record.integration_id == request.integration_id)
@@ -122,6 +138,15 @@ impl IntegrationService {
         let _operation = self.acquire_operation(PathBuf::from(&record.project_root))?;
         let arguments = vec!["--project".into(), record.project_root, "--state-root".into(), self.config.state_root.display().to_string(), "--run-id".into(), record.run_id, "--json".into()];
         serde_json::from_value(self.run(script, arguments)?).map_err(|error| IntegrationError::new("invalidCleanupResult", error.to_string()))
+    }
+
+    fn force_cleanup(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> {
+        let record = self.list()?.integrations.into_iter().find(|record| record.integration_id == request.integration_id)
+            .ok_or_else(|| IntegrationError::new("integrationNotFound", "Refresh the integration list and try again."))?;
+        let _operation = self.acquire_operation(PathBuf::from(&record.project_root))?;
+        // The script only removes this receipt's marker blocks and refuses residual unmarked code.
+        let arguments = vec!["--project".into(), record.project_root, "--state-root".into(), self.config.state_root.display().to_string(), "--run-id".into(), record.run_id, "--force".into(), "--json".into()];
+        serde_json::from_value(self.run("post-run.sh", arguments)?).map_err(|error| IntegrationError::new("invalidCleanupResult", error.to_string()))
     }
 
     fn run(&self, script: &str, arguments: Vec<String>) -> Result<serde_json::Value, IntegrationError> {
@@ -133,12 +158,13 @@ impl IntegrationService {
         Ok(value)
     }
 
-    fn operation_arguments(&self, path: &Path, project_file: Option<&str>, endpoint: &str) -> Vec<String> {
+    fn operation_arguments(&self, path: &Path, project_file: Option<&str>, endpoint: &str, database_result_capture: bool) -> Vec<String> {
         let payload = self.payload.as_ref().expect("availability checked");
         let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), endpoint.into(), "--state-root".into(), self.config.state_root.display().to_string(),
             "--package-file".into(), payload.package_file.display().to_string(), "--package-id".into(), EMBEDDED_PACKAGE_ID.into(), "--package-version".into(), EMBEDDED_PACKAGE_VERSION.into(),
             "--payload-root".into(), payload.root.display().to_string(), "--payload-digest".into(), EMBEDDED_PAYLOAD_DIGEST.into()];
         if let Some(project_file) = project_file { arguments.extend(["--project-file".into(), project_file.into()]); }
+        if database_result_capture { arguments.push("--database-result-capture".into()); }
         arguments
     }
 
@@ -167,6 +193,18 @@ impl IntegrationService {
         }
         Ok(ProjectOperation { path, active_operations: &self.active_operations })
     }
+}
+
+fn integration_operations(database_result_capture: bool) -> Vec<String> {
+    let mut operations = vec![
+        "Add project-scoped private local NuGet feed".into(),
+        "Add exact private PackageReference".into(),
+        "Register one host-wide capture bridge for IHttpClientFactory, Refit, direct HttpClient, and RestSharp".into(),
+    ];
+    if database_result_capture {
+        operations.push("Add an opt-in Dapper database-result wrapper only at verified factory call sites".into());
+    }
+    operations
 }
 
 struct ProjectOperation<'a> { path: PathBuf, active_operations: &'a Mutex<HashSet<PathBuf>> }

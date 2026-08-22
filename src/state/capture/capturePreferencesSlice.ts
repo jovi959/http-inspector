@@ -20,6 +20,8 @@ export const createCapturePreferencesSlice: StateCreator<CaptureStore, [], [], C
   filterError: null,
   focusedGroupId: null,
   sequenceSort: null,
+  expandedStructureNodeIds: new Set(),
+  knownStructureNodeIds: new Set(),
   setWorkspaceView: (workspaceView) => set((state) => saveAndReturn(state, { workspaceView })),
   setTheme: (theme) => set((state) => saveAndReturn(state, { theme })),
   setPaneLayout: (paneLayout) => set((state) => saveAndReturn(state, { paneLayout })),
@@ -32,6 +34,21 @@ export const createCapturePreferencesSlice: StateCreator<CaptureStore, [], [], C
   }),
   setFocusedGroupId: (focusedGroupId) => set({ focusedGroupId }),
   setSequenceSort: (sequenceSort) => set({ sequenceSort }),
+  observeStructureNodes: (ids) => set((state) => {
+    const knownStructureNodeIds = new Set(state.knownStructureNodeIds);
+    const expandedStructureNodeIds = new Set(state.expandedStructureNodeIds);
+    for (const id of ids) {
+      if (!knownStructureNodeIds.has(id)) expandedStructureNodeIds.add(id);
+      knownStructureNodeIds.add(id);
+    }
+    return { knownStructureNodeIds, expandedStructureNodeIds };
+  }),
+  toggleStructureNode: (id) => set((state) => {
+    const expandedStructureNodeIds = new Set(state.expandedStructureNodeIds);
+    if (expandedStructureNodeIds.has(id)) expandedStructureNodeIds.delete(id);
+    else expandedStructureNodeIds.add(id);
+    return { expandedStructureNodeIds };
+  }),
 });
 
 function saveAndReturn(state: CapturePreferencesSlice, change: Partial<StoredDisplayPreferences>): Partial<CapturePreferencesSlice> {

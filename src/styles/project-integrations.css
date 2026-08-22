@@ -12,6 +12,11 @@
 .integration-card:first-of-type { margin-top: 0; }
 .integration-card h3 { margin: 0 0 6px; font-size: 15px; }
 .integration-card p { margin-bottom: 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.integration-option { display: flex; align-items: center; gap: 8px; margin: 12px 0; color: var(--text); font-size: 12px; font-weight: 700; }
+.integration-database-preview { display: grid; gap: 4px; margin: 0 0 12px; border-left: 3px solid var(--accent); padding: 8px 10px; background: var(--surface-muted); color: var(--muted); font: 11px var(--font-mono); }
+.integration-database-preview strong { color: var(--text); font-family: var(--font-sans); font-size: 12px; }
+.integration-database-preview p { margin: 4px 0 0; }
+.integration-database-preview ul { margin: 4px 0 0; padding-left: 16px; }
 .integration-bash-picker code { border-radius: 3px; padding: 1px 3px; background: var(--surface-code); color: var(--text); font: 11px var(--font-mono); }
 .integration-path-form { display: flex; align-items: flex-end; gap: 10px; }
 .integration-path-form label, .integration-preview > label { display: grid; flex: 1; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }

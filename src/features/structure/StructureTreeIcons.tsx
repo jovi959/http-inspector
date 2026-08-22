@@ -21,6 +21,16 @@ export function StructureFolderIcon() {
   );
 }
 
+export function StructureDatabaseIcon() {
+  return (
+    <svg className="tree-icon tree-database-icon" viewBox="0 0 30 30" aria-hidden="true">
+      <ellipse cx="15" cy="6" rx="11" ry="4" fill="#6bc0f4" stroke="#0865a8" />
+      <path d="M4 6v15c0 2.2 4.9 4 11 4s11-1.8 11-4V6" fill="#1686d3" stroke="#0865a8" />
+      <path d="M4 13c0 2.2 4.9 4 11 4s11-1.8 11-4M4 19c0 2.2 4.9 4 11 4s11-1.8 11-4" fill="none" stroke="#d9f2ff" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 export function StructureFileIcon({ type }: { readonly type: StructureFileType }) {
   const symbol = type === "json" ? "{}" : type === "xml" ? "<>" : type === "text" ? "TXT" : "•";
   return (

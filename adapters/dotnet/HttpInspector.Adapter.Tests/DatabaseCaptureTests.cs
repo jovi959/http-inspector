@@ -1,4 +1,5 @@
 using Microsoft.Data.SqlClient;
+using System.Text.Json.Nodes;
 using HttpInspector.Adapter;
 using Xunit;
 
@@ -36,6 +37,7 @@ public sealed class DatabaseCaptureTests
         Assert.Equal("select * from dbo.students where id = @id", started["query"]!["value"]!.GetValue<string>());
         Assert.Equal("database.command.completed", completed["type"]!.GetValue<string>());
         Assert.Equal("result rows are not captured", completed["result"]!["reason"]!.GetValue<string>());
+        Assert.Empty(completed["result"]!["columns"]!.AsArray());
     }
 
     [Fact]
@@ -89,6 +91,42 @@ public sealed class DatabaseCaptureTests
         Assert.Equal("exchange.started", httpStarted["type"]!.GetValue<string>());
         Assert.Equal(1, adapter.DatabaseDroppedCount);
         Assert.Equal(0, adapter.DroppedCount);
+    }
+
+    [Fact]
+    public async Task DB_004_opt_in_result_snapshot_preserves_bounded_rows_in_the_database_protocol()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        using var connection = new SqlConnection("Server=server.example.test;Database=school;Integrated Security=true");
+        using var command = new SqlCommand("select id, name from dbo.students", connection);
+        var handle = adapter.CaptureDatabaseStarted(command);
+        adapter.CaptureDatabaseCompleted(handle, new JsonObject
+        {
+            ["availability"] = "captured",
+            ["reason"] = null,
+            ["columns"] = new JsonArray("id", "name"),
+            ["rows"] = new JsonArray(new JsonArray(42, "Jovi")),
+            ["rowsObserved"] = 1,
+            ["rowsCaptured"] = 1,
+            ["truncated"] = false,
+        });
+
+        _ = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("captured", completed["result"]!["availability"]!.GetValue<string>());
+        Assert.Equal("name", completed["result"]!["columns"]![1]!.GetValue<string>());
+        Assert.Equal("Jovi", completed["result"]!["rows"]![0]![1]!.GetValue<string>());
     }
 
     private static async Task WaitForAsync(Func<bool> condition)

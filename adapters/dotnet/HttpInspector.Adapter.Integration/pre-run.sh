@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 package_id="HttpInspector.Adapter"
-package_version="1.4.0"
+package_version="1.4.2"
 package_feed="$script_dir/../HttpInspector.Adapter/bundle/nuget-feed"
 package_file="$package_feed/$package_id.$package_version.nupkg"
 package_digest_file="$package_file.sha256"
@@ -17,6 +17,7 @@ endpoint="ws://127.0.0.1:53662/v1/capture"
 state_root=""
 dry_run=0
 json_output=0
+database_result_capture=0
 completed=0
 active_receipt=""
 current_run_directory=""
@@ -25,10 +26,11 @@ source "$script_dir/lib/common.sh"
 source "$script_dir/lib/receipt-manager.sh"
 source "$script_dir/lib/project-discovery.sh"
 source "$script_dir/lib/mutation-planner.sh"
+source "$script_dir/lib/database-capture.sh"
 source "$script_dir/lib/cleanup-engine.sh"
 
 usage() {
-  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--package-file <path>] [--package-id <id>] [--package-version <version>] [--payload-root <path>] [--payload-digest <sha256>] [--dry-run] [--json]" >&2
+  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--package-file <path>] [--package-id <id>] [--package-version <version>] [--payload-root <path>] [--payload-digest <sha256>] [--database-result-capture] [--dry-run] [--json]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -83,6 +85,10 @@ while [[ $# -gt 0 ]]; do
       dry_run=1
       shift
       ;;
+    --database-result-capture)
+      database_result_capture=1
+      shift
+      ;;
     --json)
       json_output=1
       shift
@@ -124,6 +130,10 @@ http_inspector_validate_target_framework "$project_file"
 composition_file="$(http_inspector_resolve_composition_file "$project_root")"
 http_inspector_validate_unintegrated_project "$project_file" "$composition_file"
 coverage="$(http_inspector_coverage_inventory "$project_root")"
+DATABASE_CAPTURE_STATE_ROOT=""
+database_capture_state_root="${state_root:-$(http_inspector_default_state_root)}"
+if [[ -d "$database_capture_state_root" ]]; then DATABASE_CAPTURE_STATE_ROOT="$(http_inspector_canonical_directory "$database_capture_state_root")"; fi
+database_result_capture_preview="$(http_inspector_database_capture_preview_json "$database_result_capture")"
 run_id="$(http_inspector_generate_run_id)"
 package_feed_msbuild_path="$(http_inspector_msbuild_path "$package_feed")"
 package_feed_msbuild_path="$(http_inspector_xml_escape "$package_feed_msbuild_path")"
@@ -140,13 +150,16 @@ echo "  <PackageReference Include=\"$package_id\" Version=\"$package_version\" P
 echo "- Modify: $composition_file" >&2
 echo "  using HttpInspector.Adapter;" >&2
 echo "  services.AddHttpInspectorAdapter(); or builder.Services.AddHttpInspectorAdapter();" >&2
+if [[ $database_result_capture -eq 1 ]]; then
+  echo "- Opt-in database result capture: only verified Dapper scopes in the referenced DBFactory project" >&2
+fi
 
 if [[ $dry_run -eq 1 ]]; then
   echo "Dry run complete. No project or integration-state bytes were changed." >&2
   if [[ $json_output -eq 1 ]]; then
-    printf '{"ok":true,"dryRun":true,"projectRoot":"%s","projectFile":"%s","compositionFile":"%s","strategy":"dotnet-multiclient-nuget-bash-v4","coverage":%s,"package":{"id":"%s","version":"%s","file":"%s","digest":"%s","feed":"%s"}}\n' \
+    printf '{"ok":true,"dryRun":true,"projectRoot":"%s","projectFile":"%s","compositionFile":"%s","strategy":"dotnet-multiclient-nuget-bash-v4","coverage":%s,"databaseResultCapture":%s,"package":{"id":"%s","version":"%s","file":"%s","digest":"%s","feed":"%s"}}\n' \
       "$(http_inspector_json_escape "$project_root")" "$(http_inspector_json_escape "$project_file")" "$(http_inspector_json_escape "$composition_file")" \
-      "$coverage" \
+      "$coverage" "$database_result_capture_preview" \
       "$(http_inspector_json_escape "$package_id")" "$(http_inspector_json_escape "$package_version")" "$(http_inspector_json_escape "$package_file")" \
       "$(http_inspector_json_escape "$package_digest")" "$(http_inspector_json_escape "$package_feed")"
   fi
@@ -226,7 +239,7 @@ artifact_baseline="$run_directory/artifacts-before.txt"
 http_inspector_record_artifact_baseline "$project_root" "$artifact_baseline"
 
 http_inspector_reset_receipt
-RECEIPT_SPEC_VERSION="4.0.0"
+RECEIPT_SPEC_VERSION="4.1.0"
 RECEIPT_RUN_ID="$run_id"
 RECEIPT_STATE="preparing"
 RECEIPT_PROJECT_ROOT="$project_root"
@@ -259,9 +272,20 @@ RECEIPT_COMPOSITION_BACKUP="$composition_backup"
 RECEIPT_COMPOSITION_OWNED_HASH="$(http_inspector_sha256_file "$composition_owned")"
 RECEIPT_COMPOSITION_OWNED_COUNT="$(sed -n '1p' "$composition_owned_count_file")"
 RECEIPT_ARTIFACT_BASELINE="$artifact_baseline"
+RECEIPT_DATABASE_CAPTURE_ENABLED="0"
+RECEIPT_DATABASE_ADOPTION_ROOT=""
+RECEIPT_DATABASE_CAPTURE_REUSED="0"
 active_receipt="$run_directory/integration-receipt.env"
 http_inspector_receipt_write "$active_receipt"
 http_inspector_write_pointer "$project_state/active-receipt" "$active_receipt"
+
+if [[ $database_result_capture -eq 1 ]]; then
+  http_inspector_database_capture_enable "$state_root" "$project_state" "$run_id" "$run_directory" "$package_id" "$package_version" "$package_feed_msbuild_path"
+  RECEIPT_DATABASE_CAPTURE_ENABLED="1"
+  RECEIPT_DATABASE_ADOPTION_ROOT="$DATABASE_CAPTURE_ADOPTION_ROOT"
+  RECEIPT_DATABASE_CAPTURE_REUSED="$DATABASE_CAPTURE_REUSED"
+  http_inspector_receipt_write "$active_receipt"
+fi
 
 http_inspector_atomic_copy "$project_injected" "$project_file"
 http_inspector_atomic_copy "$composition_injected" "$composition_file"

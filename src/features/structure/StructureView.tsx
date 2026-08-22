@@ -21,10 +21,13 @@ export function StructureView({ onRecompose }: { readonly onRecompose: (exchange
   const selectedGroupId = useCaptureStore((state) => state.selectedGroupId);
   const draft = useCaptureStore((state) => state.activeRecomposeDraft);
   const selectedDraftId = useCaptureStore((state) => state.selectedRecomposeDraftId);
+  const expandedNodeIds = useCaptureStore((state) => state.expandedStructureNodeIds);
   const selectExchange = useCaptureStore((state) => state.selectExchange);
   const selectGroup = useCaptureStore((state) => state.selectGroup);
   const selectDraft = useCaptureStore((state) => state.selectRecomposeDraft);
   const setSelectionVisibility = useCaptureStore((state) => state.setSelectionVisibility);
+  const observeStructureNodes = useCaptureStore((state) => state.observeStructureNodes);
+  const toggleStructureNode = useCaptureStore((state) => state.toggleStructureNode);
   const exchanges = useMemo(() => arrivalOrder.flatMap((id) => detailById[id] ? [detailById[id]] : []), [arrivalOrder, detailById]);
   const visibleIds = useMemo(
     () => selectFilteredExchangeIds(summaries, arrivalOrder, captureFilter, treeIndex, focusedGroupId),
@@ -49,6 +52,7 @@ export function StructureView({ onRecompose }: { readonly onRecompose: (exchange
         groups={groups}
         draft={draft}
         exchangeById={detailById}
+        expandedNodeIds={expandedNodeIds}
         forcedExpandedNodeIds={captureFilter.terms.length > 0 || focusedGroupId !== null ? new Set(groupIds(groups)) : new Set()}
         selectedExchangeId={selectedExchangeId}
         selectedGroupId={selectedGroupId}
@@ -57,6 +61,8 @@ export function StructureView({ onRecompose }: { readonly onRecompose: (exchange
         onSelectExchange={selectExchange}
         onSelectGroup={selectGroup}
         onSelectDraft={selectDraft}
+        onObserveNodes={observeStructureNodes}
+        onToggleNode={toggleStructureNode}
       />}
     </section>
   );

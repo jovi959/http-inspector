@@ -44,6 +44,7 @@ export function App({ dataSource, databaseDataSource, isImported = false, onImpo
   const [captureEndpoint, setCaptureEndpoint] = useState("ws://127.0.0.1:53662/v1/capture");
   const [importError, setImportError] = useState<string | null>(null);
   const [selectedDatabaseCommand, setSelectedDatabaseCommand] = useState<DatabaseCommand | null>(null);
+  const [collapsedDatabaseNodeIds, setCollapsedDatabaseNodeIds] = useState<ReadonlySet<string>>(() => new Set());
   const recording = useCaptureStore((state) => state.captureStatus.recording);
   const captureStatus = useCaptureStore((state) => state.captureStatus);
   const totalCount = useCaptureStore((state) => state.arrivalOrder.length);
@@ -119,12 +120,23 @@ export function App({ dataSource, databaseDataSource, isImported = false, onImpo
   const openIntegrations = () => {
     void (async () => {
       try {
-        const status = await dataSource.listener?.getListenerStatus();
-        if (status?.endpoint) setCaptureEndpoint(status.endpoint);
+        // Browser-hosted mode supplies this directly; Tauri retains its existing listener status path.
+        const endpoint = await dataSource.getIntegrationEndpoint?.();
+        if (endpoint) setCaptureEndpoint(endpoint);
+        else {
+          const status = await dataSource.listener?.getListenerStatus();
+          if (status?.endpoint) setCaptureEndpoint(status.endpoint);
+        }
       } catch { /* The integration service reports a stopped or changed listener explicitly. */ }
       setIntegrationDialogOpen(true);
     })();
   };
+  const setDatabaseNodeCollapsed = (id: string, collapsed: boolean) => setCollapsedDatabaseNodeIds((current) => {
+    const next = new Set(current);
+    if (collapsed) next.add(id);
+    else next.delete(id);
+    return next;
+  });
 
   const workspaceSwitch = (
     <nav className="workspace-switch" aria-label="Capture workspace">
@@ -139,7 +151,7 @@ export function App({ dataSource, databaseDataSource, isImported = false, onImpo
       <AppShell
         toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} importError={importError} isImported={isImported} onClearSession={handleClearSession} onImportExchange={handleImportExchange} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onReturnToLiveCapture={() => onReturnToLiveCapture?.()} onThemeChange={setTheme} />}
         workspaceSwitch={workspaceSwitch}
-        primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : workspaceView === "sequence" ? <SequenceView onRecompose={openRecomposeMenu} /> : <DatabaseWorkspace dataSource={databaseDataSource} onCommandSelected={setSelectedDatabaseCommand} />}
+        primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : workspaceView === "sequence" ? <SequenceView onRecompose={openRecomposeMenu} /> : <DatabaseWorkspace collapsedNodeIds={collapsedDatabaseNodeIds} dataSource={databaseDataSource} onCommandSelected={setSelectedDatabaseCommand} onNodeCollapsedChange={setDatabaseNodeCollapsed} />}
         inspector={workspaceView === "database" ? <DatabaseCommandInspector command={selectedDatabaseCommand} /> : <Inspector dataSource={dataSource} />}
         paneLayout={paneLayout}
         statusBar={<CaptureStatusBar status={captureStatus} listener={dataSource.listener} onRetry={() => dataSource.retryConnection()} />}

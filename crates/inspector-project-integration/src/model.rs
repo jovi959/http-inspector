@@ -46,6 +46,8 @@ pub struct PreviewRequest {
     pub selection_token: String,
     pub project_file: Option<String>,
     pub endpoint: String,
+    #[serde(default)]
+    pub database_result_capture: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,6 +68,21 @@ pub struct IntegrationPreview {
     pub package: PackageIdentity,
     pub operations: Vec<String>,
     pub coverage: Vec<IntegrationCoverage>,
+    pub database_result_capture: DatabaseResultCapturePreview,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseResultCapturePreview {
+    pub requested: bool,
+    pub eligible: bool,
+    pub reason: Option<String>,
+    pub database_project_file: Option<String>,
+    pub factory_file: Option<String>,
+    #[serde(default)]
+    pub dapper_locations: Vec<String>,
+    #[serde(default)]
+    pub dapper_files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

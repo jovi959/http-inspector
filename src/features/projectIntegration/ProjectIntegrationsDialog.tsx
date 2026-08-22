@@ -16,6 +16,7 @@ export function ProjectIntegrationsDialog({ service, endpoint, onActiveCountChan
   const [selection, setSelection] = useState<ProjectSelection | null>(null);
   const [path, setPath] = useState("");
   const [preview, setPreview] = useState<IntegrationPreview | null>(null);
+  const [databaseResultCapture, setDatabaseResultCapture] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,9 +41,9 @@ export function ProjectIntegrationsDialog({ service, endpoint, onActiveCountChan
     setError(null);
     try { await operation(); } catch (reason) { setError(errorMessage(reason)); } finally { setBusy(false); }
   };
-  const inspectSelection = async (nextSelection: ProjectSelection, projectFile?: string) => {
+  const inspectSelection = async (nextSelection: ProjectSelection, projectFile?: string, captureDatabaseResults = databaseResultCapture) => {
     setSelection(nextSelection);
-    setPreview(await service.preview(nextSelection.selectionToken, endpoint, projectFile));
+    setPreview(await service.preview(nextSelection.selectionToken, endpoint, projectFile, captureDatabaseResults));
   };
 
   return (
@@ -81,7 +82,10 @@ export function ProjectIntegrationsDialog({ service, endpoint, onActiveCountChan
               </form>
             )}
           </section>}
-          {preview && <PreviewCard preview={preview} busy={busy} onProjectChoice={(projectFile) => selection && void run(() => inspectSelection(selection, projectFile))} onApply={() => preview.previewToken && void run(async () => {
+          {preview && <PreviewCard preview={preview} busy={busy} databaseResultCapture={databaseResultCapture} onProjectChoice={(projectFile) => selection && void run(() => inspectSelection(selection, projectFile))} onDatabaseResultCaptureChange={(enabled) => selection && void run(async () => {
+            setDatabaseResultCapture(enabled);
+            await inspectSelection(selection, preview.projectFile ?? undefined, enabled);
+          })} onApply={() => preview.previewToken && void run(async () => {
             await service.apply(preview.previewToken!);
             setPreview(null);
             setSelection(null);
@@ -89,7 +93,7 @@ export function ProjectIntegrationsDialog({ service, endpoint, onActiveCountChan
           })} />}
           <section className="integration-card">
             <div className="integration-section-heading"><div><h3>Integrated projects</h3><p>Receipt-backed entries persist across app restarts.</p></div><button className="toolbar-button" disabled={busy || !capabilities?.available} type="button" onClick={() => void run(refresh)}>Refresh</button></div>
-            {records.length === 0 ? <p className="integration-empty">No projects are currently integrated.</p> : records.map((record) => <IntegrationRow key={record.integrationId} record={record} busy={busy} onRemove={() => void run(async () => { await service.remove(record.integrationId); await refresh(); })} onRecover={() => void run(async () => { await service.recover(record.integrationId); await refresh(); })} />)}
+            {records.length === 0 ? <p className="integration-empty">No projects are currently integrated.</p> : records.map((record) => <IntegrationRow key={record.integrationId} record={record} busy={busy} onRemove={() => void run(async () => { await service.remove(record.integrationId); await refresh(); })} onRecover={() => void run(async () => { await service.recover(record.integrationId); await refresh(); })} onForceRemove={() => void run(async () => { await service.forceRemove(record.integrationId); await refresh(); })} />)}
           </section>
         </div>
       </section>
@@ -103,10 +107,16 @@ function RuntimeSummary({ capabilities }: { readonly capabilities: IntegrationCa
   return <div className={`integration-runtime ${capabilities.available ? "is-available" : "is-unavailable"}`}><strong>{label}</strong><span>{capabilities.available ? `${capabilities.adapterId} ${capabilities.adapterVersion} · ${capabilities.packageId} ${capabilities.packageVersion} · ${capabilities.bashPath}` : reasonLabel(capabilities.reasonCode)}</span></div>;
 }
 
-function PreviewCard({ preview, busy, onProjectChoice, onApply }: { readonly preview: IntegrationPreview; readonly busy: boolean; onProjectChoice(projectFile: string): void; onApply(): void; }) {
+function PreviewCard({ preview, busy, databaseResultCapture, onProjectChoice, onDatabaseResultCaptureChange, onApply }: { readonly preview: IntegrationPreview; readonly busy: boolean; readonly databaseResultCapture: boolean; onProjectChoice(projectFile: string): void; onDatabaseResultCaptureChange(enabled: boolean): void; onApply(): void; }) {
   return <section className="integration-card integration-preview"><h3>Review exact changes</h3><dl><div><dt>Project</dt><dd>{preview.projectRoot}</dd></div><div><dt>Endpoint</dt><dd>{preview.endpoint}</dd></div><div><dt>Package</dt><dd>{preview.package.id} {preview.package.version}</dd></div><div><dt>Private feed</dt><dd>{preview.package.feed}</dd></div><div><dt>Strategy</dt><dd>{preview.strategy}</dd></div></dl>
-    {preview.choiceRequired ? <label>Multiple projects found<select defaultValue="" onChange={(event) => event.target.value && onProjectChoice(event.target.value)}><option disabled value="">Choose a .csproj</option>{preview.choices.map((choice) => <option key={choice.projectFile} value={choice.projectFile}>{choice.label}</option>)}</select></label> : <><ul>{preview.operations.map((operation) => <li key={operation}>{operation}</li>)}</ul><CoveragePreview coverage={preview.coverage} /><button className="primary-button" disabled={busy || !preview.previewToken} type="button" onClick={onApply}>Confirm and integrate</button></>}
+    {preview.choiceRequired ? <label>Multiple projects found<select defaultValue="" onChange={(event) => event.target.value && onProjectChoice(event.target.value)}><option disabled value="">Choose a .csproj</option>{preview.choices.map((choice) => <option key={choice.projectFile} value={choice.projectFile}>{choice.label}</option>)}</select></label> : <><label className="integration-option"><input checked={databaseResultCapture} type="checkbox" onChange={(event) => onDatabaseResultCaptureChange(event.target.checked)} />Enable bounded Dapper database result capture</label>{databaseResultCapture && <DatabaseResultCapturePreview preview={preview.databaseResultCapture} />}<ul>{preview.operations.map((operation) => <li key={operation}>{operation}</li>)}</ul><CoveragePreview coverage={preview.coverage} /><button className="primary-button" disabled={busy || !preview.previewToken} type="button" onClick={onApply}>Confirm and integrate</button></>}
   </section>;
+}
+
+function DatabaseResultCapturePreview({ preview }: { readonly preview: IntegrationPreview["databaseResultCapture"] }) {
+  if (!preview.requested) return null;
+  if (!preview.eligible) return <p className="integration-error">Database result capture cannot be enabled: {preview.reason}</p>;
+  return <div className="integration-database-preview"><strong>Database result capture</strong><span>{preview.databaseProjectFile}</span><span>{preview.factoryFile}</span><p>Only verified Dapper connection scopes are changed. Raw ADO.NET calls remain unchanged.</p>{preview.dapperLocations.length > 0 && <ul>{preview.dapperLocations.map((location) => <li key={location}>{location}</li>)}</ul>}</div>;
 }
 
 function CoveragePreview({ coverage }: { readonly coverage: IntegrationPreview["coverage"] }) {
@@ -114,11 +124,11 @@ function CoveragePreview({ coverage }: { readonly coverage: IntegrationPreview["
   return <div className="integration-coverage"><h4>Detected client coverage</h4>{coverage.map((item) => <article key={item.family}><strong>{item.family} · {item.count}</strong><span>{item.bridge}{item.sourceEditsRequired ? " · additional source edits required" : " · covered by host registration"}</span><p>{item.note}</p>{item.locations.length > 0 && <ul>{item.locations.map((location) => <li key={location}>{location}</li>)}</ul>}</article>)}</div>;
 }
 
-function IntegrationRow({ record, busy, onRemove, onRecover }: { readonly record: IntegrationRecord; readonly busy: boolean; onRemove(): void; onRecover(): void; }) {
+function IntegrationRow({ record, busy, onRemove, onRecover, onForceRemove }: { readonly record: IntegrationRecord; readonly busy: boolean; onRemove(): void; onRecover(): void; onForceRemove(): void; }) {
   const attention = record.state === "cleanupRequired" || record.state === "missingProject" || record.receiptStatus === "invalidReceipt";
-  return <article className={`integration-row ${attention ? "needs-attention" : ""}`}><div><strong>{record.projectRoot || "Unknown project"}</strong><span>{record.state} · {record.strategy}{record.payloadAvailable ? "" : " · payload missing"}</span></div><div>{attention && <button className="toolbar-button" disabled={busy} type="button" onClick={onRecover}>Recover</button>}<button className="toolbar-button" disabled={busy || record.state === "missingProject"} type="button" onClick={onRemove}>Remove</button></div></article>;
+  return <article className={`integration-row ${attention ? "needs-attention" : ""}`}><div><strong>{record.projectRoot || "Unknown project"}</strong><span>{record.state} · {record.strategy}{record.payloadAvailable ? "" : " · payload missing"}</span>{attention && <small>Force removal deletes only this receipt’s markers and refuses residual unmarked inspector code.</small>}</div><div>{attention && <button className="toolbar-button" disabled={busy} type="button" onClick={onRecover}>Recover</button>}{attention && <button className="toolbar-button" disabled={busy || record.state === "missingProject"} type="button" onClick={onForceRemove}>Force remove inspector markers</button>}<button className="toolbar-button" disabled={busy || record.state === "missingProject"} type="button" onClick={onRemove}>Remove</button></div></article>;
 }
 
-function unavailableCapabilities(): IntegrationCapabilities { return { available: false, runtime: "unavailable", transport: "none", folderSelection: "none", reasonCode: "hostedIntegrationUnavailable", bashPath: null, adapterId: "dotnet-httpclient", adapterVersion: "1.4.0", payloadDigest: "", packageId: "HttpInspector.Adapter", packageVersion: "1.4.0" }; }
+function unavailableCapabilities(): IntegrationCapabilities { return { available: false, runtime: "unavailable", transport: "none", folderSelection: "none", reasonCode: "hostedIntegrationUnavailable", bashPath: null, adapterId: "dotnet-httpclient", adapterVersion: "1.4.2", payloadDigest: "", packageId: "HttpInspector.Adapter", packageVersion: "1.4.2" }; }
 function reasonLabel(code: string | null): string { return code === "bashUnavailable" ? "Bash or Git Bash was not found. Capture and replay are unaffected." : code === "payloadUnavailable" ? "The embedded adapter payload could not be prepared." : "Start the loopback service with --project-integration local to enable project changes."; }
 function errorMessage(reason: unknown): string { if (reason instanceof Error) return reason.message; if (typeof reason === "object" && reason !== null && "message" in reason) return String(reason.message); return "Project integration failed."; }

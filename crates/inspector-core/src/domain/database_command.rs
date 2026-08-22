@@ -65,12 +65,22 @@ pub struct DatabaseCommandFailure {
     pub message: String,
 }
 
-/// The database command detail intentionally does not imply that result rows were captured.
-#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize, PartialEq, Eq)]
+/// Captured result data is bounded and explicit so passive provider diagnostics remain valid.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseResultAvailability {
     pub availability: DatabaseCaptureAvailability,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub rows: Vec<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub rows_observed: Option<u64>,
+    #[serde(default)]
+    pub rows_captured: Option<u64>,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 /// Canonical database command detail stored separately from HTTP exchanges.

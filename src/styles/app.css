@@ -35,6 +35,8 @@ h2 { margin-bottom: 0; font-size: 17px; letter-spacing: -.015em; }
 .database-tree { height: calc(100% - 70px); min-width: 0; overflow: auto; padding: 8px 0; }
 .database-tree details > summary { cursor: pointer; padding: 7px 12px; color: var(--text); font-size: 12px; font-weight: 750; }
 .database-tree details details > summary { padding-left: 28px; font-weight: 650; }
+.database-root-summary { display: flex; align-items: center; gap: 7px; }
+.tree-database-icon { width: 21px; height: 21px; }
 .database-command-row { display: grid; width: 100%; grid-template-columns: 74px 74px minmax(0, 1fr); gap: 6px; border: 0; padding: 7px 12px 7px 46px; background: transparent; color: var(--muted); font: 11px var(--font-mono); text-align: left; }
 .database-command-row:hover, .database-command-row.is-selected { background: var(--surface-tint); color: var(--text); }
 .database-command-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -54,6 +56,13 @@ h2 { margin-bottom: 0; font-size: 17px; letter-spacing: -.015em; }
 .database-parameters th, .database-parameters td { padding: 8px 10px; border-bottom: 1px solid var(--divider-soft); text-align: left; vertical-align: top; }
 .database-parameters th { position: sticky; top: 0; background: var(--surface-header); color: var(--muted); font-size: 10px; text-transform: uppercase; }
 .database-parameters td { overflow-wrap: anywhere; }
+.database-response { min-width: 0; }
+.database-response-summary { margin: 0; padding: 9px 12px; border-bottom: 1px solid var(--divider-soft); color: var(--muted); font: 11px var(--font-mono); }
+.database-results { overflow: auto; }
+.database-results table { width: max-content; min-width: 100%; border-collapse: collapse; font: 11px var(--font-mono); }
+.database-results th, .database-results td { padding: 8px 10px; border-bottom: 1px solid var(--divider-soft); text-align: left; vertical-align: top; }
+.database-results th { position: sticky; top: 0; background: var(--surface-header); color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.database-results td { max-width: 360px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .database-error { margin: 0; padding: 8px 12px; color: var(--error); font-size: 12px; }
 .structure-tree { overflow: auto; height: calc(100% - 70px); }
 .structure-tree .virtual-list-row { height: 30px; }

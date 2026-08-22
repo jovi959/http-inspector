@@ -5,9 +5,10 @@ export interface ProjectIntegrationService {
   chooseBash(): Promise<IntegrationCapabilities | null>;
   chooseProject(): Promise<ProjectSelection | null>;
   selectProject(path: string): Promise<ProjectSelection>;
-  preview(selectionToken: string, endpoint: string, projectFile?: string): Promise<IntegrationPreview>;
+  preview(selectionToken: string, endpoint: string, projectFile?: string, databaseResultCapture?: boolean): Promise<IntegrationPreview>;
   list(): Promise<IntegrationCatalog>;
   apply(previewToken: string): Promise<IntegrationOperationResult>;
   remove(integrationId: string): Promise<IntegrationOperationResult>;
   recover(integrationId: string): Promise<IntegrationOperationResult>;
+  forceRemove(integrationId: string): Promise<IntegrationOperationResult>;
 }

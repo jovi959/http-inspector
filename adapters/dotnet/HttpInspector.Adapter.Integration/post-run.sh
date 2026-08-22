@@ -8,15 +8,17 @@ project_root=""
 state_root=""
 expected_run_id=""
 json_output=0
+force_cleanup=0
 
 source "$script_dir/lib/common.sh"
 source "$script_dir/lib/receipt-manager.sh"
 source "$script_dir/lib/mutation-planner.sh"
+source "$script_dir/lib/database-capture.sh"
 source "$script_dir/lib/cleanup-engine.sh"
 
 usage() {
-  echo "Usage: $0 --project <path> [--state-root <external-path>] [--run-id <uuid>] [--json]" >&2
-  echo "   or: $0 --receipt <external-receipt-path> [--json]" >&2
+  echo "Usage: $0 --project <path> [--state-root <external-path>] [--run-id <uuid>] [--force] [--json]" >&2
+  echo "   or: $0 --receipt <external-receipt-path> [--force] [--json]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +42,11 @@ while [[ $# -gt 0 ]]; do
       http_inspector_require_value "$1" "${2:-}"
       expected_run_id="$2"
       shift 2
+      ;;
+    --force)
+      # Force cleanup only removes this run's explicit markers; it never restores over unknown code.
+      force_cleanup=1
+      shift
       ;;
     --json)
       json_output=1
@@ -96,9 +103,9 @@ http_inspector_acquire_lock "$project_state"
 trap 'http_inspector_release_lock' EXIT INT TERM
 cleanup_status=0
 if [[ $json_output -eq 1 ]]; then
-  http_inspector_cleanup_receipt "$receipt_path" "$project_root" >&2 || cleanup_status=$?
+  http_inspector_cleanup_receipt "$receipt_path" "$project_root" "$force_cleanup" >&2 || cleanup_status=$?
 else
-  http_inspector_cleanup_receipt "$receipt_path" "$project_root" || cleanup_status=$?
+  http_inspector_cleanup_receipt "$receipt_path" "$project_root" "$force_cleanup" || cleanup_status=$?
 fi
 http_inspector_release_lock
 trap - EXIT INT TERM

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -14,11 +14,14 @@ interface StructureTreeProps {
   readonly exchangeById: Readonly<Record<string, HttpExchange>>;
   readonly selectedExchangeId: string | null;
   readonly selectedGroupId: string | null;
+  readonly expandedNodeIds: ReadonlySet<string>;
   readonly forcedExpandedNodeIds: ReadonlySet<string>;
   readonly draft: RecomposeDraft | null;
   readonly selectedDraftId: string | null;
   onSelectExchange(id: string): void;
   onSelectGroup(id: string): void;
+  onObserveNodes(ids: readonly string[]): void;
+  onToggleNode(id: string): void;
   onSelectDraft(): void;
   onRecompose(exchange: HttpExchange, x: number, y: number): void;
 }
@@ -29,30 +32,24 @@ export function StructureTree({
   exchangeById,
   selectedExchangeId,
   selectedGroupId,
+  expandedNodeIds,
   forcedExpandedNodeIds,
   draft,
   selectedDraftId,
   onSelectExchange,
   onSelectGroup,
+  onObserveNodes,
+  onToggleNode,
   onSelectDraft,
   onRecompose,
 }: StructureTreeProps) {
-  const knownGroupIds = useRef<Set<string>>(new Set());
   const scrollElement = useRef<HTMLDivElement>(null);
   const rowElements = useRef(new Map<string, HTMLButtonElement>());
-  const [expandedNodeIds, setExpandedNodeIds] = useState<ReadonlySet<string>>(() => new Set());
   const groupIds = useMemo(() => getGroupIds(groups), [groups]);
 
   useEffect(() => {
-    setExpandedNodeIds((current) => {
-      const next = new Set(current);
-      for (const id of groupIds) {
-        if (!knownGroupIds.current.has(id)) next.add(id);
-        knownGroupIds.current.add(id);
-      }
-      return next;
-    });
-  }, [groupIds]);
+    onObserveNodes(groupIds);
+  }, [groupIds, onObserveNodes]);
 
   const rows = useMemo(
     () => flattenStructureGroups(groups, expandedNodeIds, forcedExpandedNodeIds, draft),
@@ -65,12 +62,7 @@ export function StructureTree({
     getItemKey: (index) => rows[index]!.key,
     overscan: 12,
   });
-  const toggle = (id: string) => setExpandedNodeIds((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
-  });
+  const toggle = (id: string) => onToggleNode(id);
   const focusRow = (row: StructureVisibleRow | undefined) => row && rowElements.current.get(row.key)?.focus();
   const onRowKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, row: StructureVisibleRow) => {
     const index = rows.findIndex((candidate) => candidate.key === row.key);

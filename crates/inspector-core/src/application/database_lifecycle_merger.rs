@@ -177,7 +177,15 @@ fn missing_start_command(
         },
         total_duration: DurationValue { milliseconds: None, provenance: CaptureProvenance::Unavailable },
         failure: None,
-        result: DatabaseResultAvailability { availability: unavailable, reason: Some("result rows are not captured".into()) },
+        result: DatabaseResultAvailability {
+            availability: unavailable,
+            reason: Some("result rows are not captured".into()),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            rows_observed: None,
+            rows_captured: None,
+            truncated: false,
+        },
     }
 }
 

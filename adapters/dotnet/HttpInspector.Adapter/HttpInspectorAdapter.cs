@@ -181,24 +181,24 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         return handle;
     }
 
-    /// Completes database capture without attempting to read result rows or database streams.
-    public void CaptureDatabaseCompleted(DatabaseCommandHandle handle)
+    /// Completes database capture with optional bounded result data supplied by an opt-in reader wrapper.
+    public void CaptureDatabaseCompleted(DatabaseCommandHandle handle, JsonObject? result = null)
     {
-        QueueDatabaseTerminal(handle, "database.command.completed", null, null);
+        QueueDatabaseTerminal(handle, "database.command.completed", null, null, result);
     }
 
     /// Records a provider failure while keeping the original SQL capture separate from HTTP failures.
     public void CaptureDatabaseFailed(DatabaseCommandHandle handle, Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        QueueDatabaseTerminal(handle, "database.command.failed", exception, null);
+        QueueDatabaseTerminal(handle, "database.command.failed", exception, null, null);
     }
 
     /// Records cancellation as a terminal database lifecycle state without affecting command execution.
     public void CaptureDatabaseCancelled(DatabaseCommandHandle handle, string origin)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(origin);
-        QueueDatabaseTerminal(handle, "database.command.cancelled", null, origin);
+        QueueDatabaseTerminal(handle, "database.command.cancelled", null, origin, null);
     }
 
     public async Task FlushAsync(TimeSpan timeout)
@@ -485,7 +485,7 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         WakeWorker();
     }
 
-    private void QueueDatabaseTerminal(DatabaseCommandHandle handle, string type, Exception? exception, string? origin)
+    private void QueueDatabaseTerminal(DatabaseCommandHandle handle, string type, Exception? exception, string? origin, JsonObject? result)
     {
         ArgumentNullException.ThrowIfNull(handle);
         if (!handle.Captured || Interlocked.Exchange(ref handle.TerminalQueued, 1) != 0)
@@ -502,7 +502,7 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
                 return;
             }
 
-            var message = BuildDatabaseTerminalMessage(type, state, elapsed, endedAt, exception, origin);
+            var message = BuildDatabaseTerminalMessage(type, state, elapsed, endedAt, exception, origin, result);
             if (!TryEnqueueDatabaseLocked(message))
             {
                 _databaseCommands.Remove(handle.CommandId);
@@ -800,12 +800,13 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
         TimeSpan elapsed,
         DateTimeOffset sentAt,
         Exception? exception,
-        string? origin)
+        string? origin,
+        JsonObject? result)
     {
         var messageId = _dependencies.IdGenerator.NextUuid();
         var payload = DatabaseLifecycleBase(type, state.Handle.CommandId, 2, sentAt, messageId);
         payload["totalDuration"] = DurationJson((ulong)Math.Max(0, (long)elapsed.TotalMilliseconds), "measured");
-        payload["result"] = DatabaseResultJson();
+        payload["result"] = result?.DeepClone() ?? DatabaseResultJson();
         if (type == "database.command.failed")
         {
             payload["failure"] = new JsonObject
@@ -1018,6 +1019,11 @@ public sealed class HttpInspectorAdapter : IAsyncDisposable
     {
         ["availability"] = "unavailable",
         ["reason"] = "result rows are not captured",
+        ["columns"] = new JsonArray(),
+        ["rows"] = new JsonArray(),
+        ["rowsObserved"] = null,
+        ["rowsCaptured"] = null,
+        ["truncated"] = false,
     };
 
     private static string ProviderName(DbCommand command) => command.GetType().Assembly.GetName().Name ?? command.GetType().Namespace ?? "unknown";
