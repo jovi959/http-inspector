@@ -112,11 +112,16 @@ http_inspector_generate_run_id() {
 }
 
 http_inspector_detect_newline() {
-  if LC_ALL=C grep -q $'\r$' "$1"; then
-    printf 'crlf\n'
-  else
-    printf 'lf\n'
-  fi
+  local line carriage_return=$'\r'
+  # Git Bash tools can transparently translate CRLF to LF before grep/awk sees it. Bash's
+  # `read -r` preserves the carriage return, so use it for a stable cross-platform result.
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == *"$carriage_return" ]]; then
+      printf 'crlf\n'
+      return
+    fi
+  done < "$1"
+  printf 'lf\n'
 }
 
 http_inspector_msbuild_path() {

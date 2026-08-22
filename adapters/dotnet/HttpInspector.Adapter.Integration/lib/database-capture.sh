@@ -66,15 +66,33 @@ http_inspector_database_capture_project_closure() {
   done
 }
 
+http_inspector_database_capture_source_files() {
+  local source_root="$1"
+  # Generated compiler output can contain stale copies of source metadata. It must never affect
+  # a project-scoped integration preview or be considered for source edits.
+  find "$source_root" \
+    \( -type d \( -name bin -o -name obj \) -prune \) -o \
+    \( -type f -name '*.cs' -print \) | LC_ALL=C sort
+}
+
 http_inspector_database_capture_prepare_dapper_file() {
   local source="$1"
   local output="$2"
+  local newline_style
+  newline_style="$(http_inspector_detect_newline "$source")"
   # Scan source as bytes so an existing legacy non-UTF8 comment cannot disrupt discovery.
-  LC_ALL=C awk '
+  LC_ALL=C awk -v newline_style="$newline_style" '
+    BEGIN { output_newline = newline_style == "crlf" ? "\r\n" : "\n" }
+    function emit(value) {
+      sub(/\r$/, "", value)
+      printf "%s%s", value, output_newline
+    }
     {
-      lines[NR] = $0
+      raw = $0
+      sub(/\r$/, "", raw)
+      lines[NR] = raw
       before[NR] = depth
-      code = $0
+      code = raw
       gsub(/"([^"\\]|\\.)*"/, "", code)
       opens = gsub(/\{/, "{", code)
       closes = gsub(/\}/, "}", code)
@@ -95,7 +113,7 @@ http_inspector_database_capture_prepare_dapper_file() {
       }
       for (i = 1; i <= NR; i++) {
         if (patch[i]) sub(/GetConnection[[:space:]]*\([[:space:]]*\)/, "GetDapperConnection()", lines[i])
-        print lines[i]
+        emit(lines[i])
       }
     }
   ' "$source" > "$output"
@@ -104,9 +122,16 @@ http_inspector_database_capture_prepare_dapper_file() {
 http_inspector_database_capture_prepare_raw_ado_file() {
   local source="$1"
   local output="$2"
+  local newline_style
+  newline_style="$(http_inspector_detect_newline "$source")"
   # This is intentionally conservative: only commands constructed with a connection from the
   # file's single IDBFactory field and no-argument terminal async calls are eligible.
-  LC_ALL=C awk '
+  LC_ALL=C awk -v newline_style="$newline_style" '
+    BEGIN { output_newline = newline_style == "crlf" ? "\r\n" : "\n" }
+    function emit(value) {
+      sub(/\r$/, "", value)
+      printf "%s%s", value, output_newline
+    }
     function identifier_before_equals(value, left, parts, count) {
       left = value
       sub(/=.*/, "", left)
@@ -116,8 +141,10 @@ http_inspector_database_capture_prepare_raw_ado_file() {
       return count > 0 ? parts[count] : ""
     }
     {
-      lines[NR] = $0
-      code = $0
+      raw = $0
+      sub(/\r$/, "", raw)
+      lines[NR] = raw
+      code = raw
       gsub(/"([^"\\]|\\.)*"/, "", code)
       line_static[NR] = static_scope_depth > 0
       if (code ~ /(^|[[:space:]])static[[:space:]]/ && code ~ /[(]/) pending_static_scope = 1
@@ -129,8 +156,8 @@ http_inspector_database_capture_prepare_raw_ado_file() {
         pending_static_scope = 0
       }
       if (static_scope_depth > 0 && depth < static_scope_depth) static_scope_depth = 0
-      if ($0 ~ /private[[:space:]]+readonly[[:space:]]+IDBFactory[[:space:]]+/) {
-        candidate = $0
+      if (raw ~ /private[[:space:]]+readonly[[:space:]]+IDBFactory[[:space:]]+/) {
+        candidate = raw
         sub(/^.*IDBFactory[[:space:]]+/, "", candidate)
         sub(/[^[:alnum:]_].*$/, "", candidate)
         factory_count++
@@ -139,7 +166,7 @@ http_inspector_database_capture_prepare_raw_ado_file() {
     }
     END {
       if (factory_count != 1 || factory == "") {
-        for (i = 1; i <= NR; i++) print lines[i]
+        for (i = 1; i <= NR; i++) emit(lines[i])
         exit
       }
       for (i = 1; i <= NR; i++) {
@@ -183,7 +210,7 @@ http_inspector_database_capture_prepare_raw_ado_file() {
       if (reader_capture) {
         for (i = 1; i <= NR; i++) gsub(/SqlDataReader/, "System.Data.Common.DbDataReader", lines[i])
       }
-      for (i = 1; i <= NR; i++) print lines[i]
+      for (i = 1; i <= NR; i++) emit(lines[i])
     }
   ' "$source" > "$output"
 }
@@ -297,7 +324,7 @@ http_inspector_database_capture_discover() {
         done < <(LC_ALL=C diff -u "$source" "$candidate_output" | LC_ALL=C sed -n -E 's/^\+[^+].*/changed/p')
       fi
       rm -f "$candidate_output"
-    done < <(find "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")" -type f -name '*.cs' -print | LC_ALL=C sort)
+    done < <(http_inspector_database_capture_source_files "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")")
   fi
 
   while IFS= read -r source; do
@@ -312,7 +339,7 @@ http_inspector_database_capture_discover() {
     while IFS= read -r line; do
       [[ -n "$line" ]] && DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$line")
     done < <(http_inspector_database_capture_raw_source_has_unsupported_reader "$source")
-  done < <(find "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")" -type f -name '*.cs' -print | LC_ALL=C sort)
+  done < <(http_inspector_database_capture_source_files "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")")
 
   if [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -eq 0 ]]; then
     local key
@@ -483,11 +510,20 @@ http_inspector_database_capture_prepare_source() {
 http_inspector_database_capture_prepare_factory_file() {
   local input="$1"
   local output="$2"
-  awk -v class_name="$DATABASE_CAPTURE_FACTORY_CLASS" -v interface_name="$DATABASE_CAPTURE_FACTORY_INTERFACE" '
+  local newline_style
+  newline_style="$(http_inspector_detect_newline "$input")"
+  awk -v class_name="$DATABASE_CAPTURE_FACTORY_CLASS" -v interface_name="$DATABASE_CAPTURE_FACTORY_INTERFACE" -v newline_style="$newline_style" '
+    BEGIN { output_newline = newline_style == "crlf" ? "\r\n" : "\n" }
+    function emit(value) {
+      sub(/\r$/, "", value)
+      printf "%s%s", value, output_newline
+    }
     {
-      if ($0 ~ "public class " class_name) sub("public class " class_name, "public partial class " class_name)
-      if ($0 ~ "public interface " interface_name) sub("public interface " interface_name, "public partial interface " interface_name)
-      print
+      raw = $0
+      sub(/\r$/, "", raw)
+      if (raw ~ "public class " class_name) sub("public class " class_name, "public partial class " class_name, raw)
+      if (raw ~ "public interface " interface_name) sub("public interface " interface_name, "public partial interface " interface_name, raw)
+      emit(raw)
     }
   ' "$input" > "$output"
 }
