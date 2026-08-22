@@ -220,26 +220,8 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
     private static CapturedCell CaptureValue(DbDataReader reader, int ordinal, ulong maximumCellBytes)
     {
         if (reader.IsDBNull(ordinal)) return new CapturedCell(null, false);
-        if (reader.GetFieldType(ordinal) == typeof(string))
-        {
-            var characterLength = reader.GetChars(ordinal, 0, null, 0, 0);
-            var captureLength = (int)Math.Min(characterLength, Math.Max(1, MaximumCaptureLength(maximumCellBytes / 4)));
-            var characters = new char[captureLength];
-            _ = reader.GetChars(ordinal, 0, characters, 0, captureLength);
-            return characterLength > captureLength
-                ? new CapturedCell(new JsonObject { ["kind"] = "text", ["value"] = new string(characters), ["observedCharacterLength"] = characterLength, ["truncated"] = true }, true)
-                : new CapturedCell(JsonValue.Create(new string(characters)), false);
-        }
-        if (reader.GetFieldType(ordinal) == typeof(byte[]))
-        {
-            var byteLength = reader.GetBytes(ordinal, 0, null, 0, 0);
-            var captureLength = (int)Math.Min(byteLength, Math.Max(1, MaximumCaptureLength(maximumCellBytes)));
-            var bytes = new byte[captureLength];
-            _ = reader.GetBytes(ordinal, 0, bytes, 0, captureLength);
-            var truncated = captureLength < byteLength;
-            return new CapturedCell(new JsonObject { ["kind"] = "binary", ["encoding"] = "base64", ["value"] = Convert.ToBase64String(bytes), ["observedByteLength"] = byteLength, ["truncated"] = truncated }, truncated);
-        }
-
+        // Capture must not consume provider streams before Dapper or application code reads the row.
+        // GetChars/GetBytes are not implemented by every DbDataReader and can advance sequential readers.
         return ValueNode(reader.GetValue(ordinal), maximumCellBytes);
     }
 
@@ -247,6 +229,7 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
     {
         null or DBNull => new CapturedCell(null, false),
         string text => TextValue(text, maximumCellBytes),
+        byte[] bytes => BinaryValue(bytes, maximumCellBytes),
         bool boolean => new CapturedCell(JsonValue.Create(boolean), false),
         byte byteValue => new CapturedCell(JsonValue.Create(byteValue), false),
         short shortValue => new CapturedCell(JsonValue.Create(shortValue), false),
@@ -267,6 +250,20 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
         return value.Length > captureLength
             ? new CapturedCell(new JsonObject { ["kind"] = "text", ["value"] = value[..captureLength], ["observedCharacterLength"] = value.Length, ["truncated"] = true }, true)
             : new CapturedCell(JsonValue.Create(value), false);
+    }
+
+    private static CapturedCell BinaryValue(byte[] value, ulong maximumCellBytes)
+    {
+        var captureLength = Math.Min(value.Length, Math.Max(1, MaximumCaptureLength(maximumCellBytes)));
+        var truncated = captureLength < value.Length;
+        return new CapturedCell(new JsonObject
+        {
+            ["kind"] = "binary",
+            ["encoding"] = "base64",
+            ["value"] = Convert.ToBase64String(value, 0, captureLength),
+            ["observedByteLength"] = value.Length,
+            ["truncated"] = truncated,
+        }, truncated);
     }
 
     private sealed record CapturedCell(JsonNode? Value, bool Truncated);

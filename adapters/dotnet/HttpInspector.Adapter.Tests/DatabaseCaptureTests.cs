@@ -243,6 +243,65 @@ public sealed class DatabaseCaptureTests
         Assert.Null(completed["result"]!["reason"]);
     }
 
+    [Fact]
+    public async Task DB_008_dapper_query_async_preserves_database_nulls()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("DocumentJson", typeof(string));
+        table.Columns.Add("DocumentId", typeof(int));
+        table.Rows.Add(DBNull.Value, 6674465);
+        using var providerConnection = new BufferedReaderConnection(table);
+        using var connection = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 1024, 10, 256, 10).Wrap(providerConnection);
+        await connection.OpenAsync();
+
+        var rows = (await connection.QueryAsync<NullableDocumentRow>("select DocumentJson, DocumentId from dbo.Document")).ToArray();
+
+        Assert.Single(rows);
+        Assert.Null(rows[0].DocumentJson);
+        Assert.Equal(6674465, rows[0].DocumentId);
+    }
+
+    [Fact]
+    public async Task DB_009_dapper_query_async_does_not_consume_text_values_before_the_application_reads_them()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        const string documentJson = "{\"source\":\"Web\",\"documentId\":6674465}";
+        var table = new DataTable();
+        table.Columns.Add("DocumentJson", typeof(string));
+        table.Columns.Add("DocumentId", typeof(int));
+        table.Rows.Add(documentJson, 6674465);
+        using var providerConnection = new BufferedReaderConnection(table);
+        using var connection = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 1024, 10, 256, 10).Wrap(providerConnection);
+        await connection.OpenAsync();
+
+        var rows = (await connection.QueryAsync<NullableDocumentRow>("select DocumentJson, DocumentId from dbo.Document")).ToArray();
+
+        Assert.Single(rows);
+        Assert.Equal(documentJson, rows[0].DocumentJson);
+        Assert.Equal(6674465, rows[0].DocumentId);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(1);
@@ -261,6 +320,12 @@ public sealed class DatabaseCaptureTests
     {
         public int Id { get; init; }
         public int Sequence { get; init; }
+    }
+
+    private sealed class NullableDocumentRow
+    {
+        public string? DocumentJson { get; init; }
+        public int DocumentId { get; init; }
     }
 
     private sealed class BufferedReaderConnection(DataTable table) : DbConnection
