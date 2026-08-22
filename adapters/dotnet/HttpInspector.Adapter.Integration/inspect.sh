@@ -8,11 +8,12 @@ project_file=""
 endpoint="ws://127.0.0.1:53662/v1/capture"
 state_root=""
 database_result_capture=0
+raw_ado_net_result_capture=0
 
 source "$script_dir/lib/common.sh"
 
 usage() {
-  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--database-result-capture] --json" >&2
+  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--database-result-capture] [--raw-ado-net-result-capture] --json" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -22,6 +23,7 @@ while [[ $# -gt 0 ]]; do
     --endpoint) http_inspector_require_value "$1" "${2:-}"; endpoint="$2"; shift 2 ;;
     --state-root) http_inspector_require_value "$1" "${2:-}"; state_root="$2"; shift 2 ;;
     --database-result-capture) database_result_capture=1; shift ;;
+    --raw-ado-net-result-capture) raw_ado_net_result_capture=1; shift ;;
     --json) shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; http_inspector_die "Unsupported option: $1" ;;
@@ -29,6 +31,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$project_root" ]] || { usage; http_inspector_die "--project is required."; }
+[[ $raw_ado_net_result_capture -eq 0 || $database_result_capture -eq 1 ]] || http_inspector_die "--raw-ado-net-result-capture requires --database-result-capture."
 project_root="$(http_inspector_canonical_directory "$project_root")"
 if [[ -z "$project_file" ]]; then
   project_choices=()
@@ -52,4 +55,5 @@ arguments=(--project "$project_root" --endpoint "$endpoint" --dry-run --json)
 [[ -z "$project_file" ]] || arguments+=(--project-file "$project_file")
 [[ -z "$state_root" ]] || arguments+=(--state-root "$state_root")
 [[ $database_result_capture -eq 0 ]] || arguments+=(--database-result-capture)
+[[ $raw_ado_net_result_capture -eq 0 ]] || arguments+=(--raw-ado-net-result-capture)
 exec "$script_dir/pre-run.sh" "${arguments[@]}"

@@ -9,7 +9,7 @@ public static class HttpInspectorProtocol
     public const string DefaultEndpoint = "ws://127.0.0.1:53662/v1/capture";
     public const string TransportProfile = "websocket-v1";
     public const string AdapterName = "http-inspector-dotnet-httpclient";
-    public const string AdapterVersion = "1.4.2";
+    public const string AdapterVersion = "1.4.3";
 }
 
 public sealed class AdapterConfig

@@ -1,4 +1,6 @@
 using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Data.Common;
 using System.Text.Json.Nodes;
 using HttpInspector.Adapter;
 using Xunit;
@@ -129,6 +131,43 @@ public sealed class DatabaseCaptureTests
         Assert.Equal("Jovi", completed["result"]!["rows"]![0]![1]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task DB_005_factory_owned_reader_capture_observes_rows_without_reexecuting_the_command()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("id", typeof(int));
+        table.Rows.Add(42);
+        using var connection = new SqlConnection("Server=server.example.test;Database=school;Integrated Security=true");
+        using var command = new BufferedReaderCommand(connection, table);
+        var capture = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 1024, 10, 256, 10);
+
+        await using var reader = await capture.ExecuteReaderAsync(command);
+        var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("database.command.started", started["type"]!.GetValue<string>());
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(42, reader.GetInt32(0));
+
+        await reader.DisposeAsync();
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal("captured", completed["result"]!["availability"]!.GetValue<string>());
+        Assert.Equal("id", completed["result"]!["columns"]![0]!.GetValue<string>());
+        Assert.Equal(42, completed["result"]!["rows"]![0]![0]!.GetValue<int>());
+        Assert.Equal(1, command.ReaderExecutions);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(1);
@@ -140,6 +179,44 @@ public sealed class DatabaseCaptureTests
             }
 
             await Task.Yield();
+        }
+    }
+
+    private sealed class BufferedReaderCommand(DbConnection connection, DataTable table) : DbCommand
+    {
+        private readonly SqlCommand _parametersOwner = new();
+
+        public int ReaderExecutions { get; private set; }
+        public override string CommandText { get; set; } = "select id, name from dbo.students";
+        public override int CommandTimeout { get; set; }
+        public override CommandType CommandType { get; set; } = CommandType.Text;
+        public override bool DesignTimeVisible { get; set; }
+        public override UpdateRowSource UpdatedRowSource { get; set; }
+        protected override DbConnection? DbConnection { get; set; } = connection;
+        protected override DbParameterCollection DbParameterCollection => _parametersOwner.Parameters;
+        protected override DbTransaction? DbTransaction { get; set; }
+
+        public override void Cancel() { }
+        public override int ExecuteNonQuery() => 1;
+        public override object? ExecuteScalar() => 1;
+        public override void Prepare() { }
+        protected override DbParameter CreateDbParameter() => _parametersOwner.CreateParameter();
+
+        protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
+        {
+            ReaderExecutions++;
+            return table.CreateDataReader();
+        }
+
+        protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(ExecuteDbDataReader(behavior));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _parametersOwner.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

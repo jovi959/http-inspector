@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 package_id="HttpInspector.Adapter"
-package_version="1.4.2"
+package_version="1.4.3"
 package_feed="$script_dir/../HttpInspector.Adapter/bundle/nuget-feed"
 package_file="$package_feed/$package_id.$package_version.nupkg"
 package_digest_file="$package_file.sha256"
@@ -18,6 +18,7 @@ state_root=""
 dry_run=0
 json_output=0
 database_result_capture=0
+raw_ado_net_result_capture=0
 completed=0
 active_receipt=""
 current_run_directory=""
@@ -30,7 +31,7 @@ source "$script_dir/lib/database-capture.sh"
 source "$script_dir/lib/cleanup-engine.sh"
 
 usage() {
-  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--package-file <path>] [--package-id <id>] [--package-version <version>] [--payload-root <path>] [--payload-digest <sha256>] [--database-result-capture] [--dry-run] [--json]" >&2
+  echo "Usage: $0 --project <path> [--project-file <relative.csproj>] [--endpoint ws://127.0.0.1:53662/v1/capture] [--state-root <external-path>] [--package-file <path>] [--package-id <id>] [--package-version <version>] [--payload-root <path>] [--payload-digest <sha256>] [--database-result-capture] [--raw-ado-net-result-capture] [--dry-run] [--json]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -89,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       database_result_capture=1
       shift
       ;;
+    --raw-ado-net-result-capture)
+      raw_ado_net_result_capture=1
+      shift
+      ;;
     --json)
       json_output=1
       shift
@@ -108,6 +113,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$project_root" ]] || { usage; http_inspector_die "--project is required."; }
+[[ $raw_ado_net_result_capture -eq 0 || $database_result_capture -eq 1 ]] || http_inspector_die "--raw-ado-net-result-capture requires --database-result-capture."
 http_inspector_reject_multiline "Endpoint" "$endpoint"
 case "$endpoint" in
   ws://*|wss://*) ;;
@@ -133,7 +139,9 @@ coverage="$(http_inspector_coverage_inventory "$project_root")"
 DATABASE_CAPTURE_STATE_ROOT=""
 database_capture_state_root="${state_root:-$(http_inspector_default_state_root)}"
 if [[ -d "$database_capture_state_root" ]]; then DATABASE_CAPTURE_STATE_ROOT="$(http_inspector_canonical_directory "$database_capture_state_root")"; fi
-database_result_capture_preview="$(http_inspector_database_capture_preview_json "$database_result_capture")"
+DATABASE_CAPTURE_DAPPER_REQUESTED="$database_result_capture"
+DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED="$raw_ado_net_result_capture"
+database_result_capture_preview="$(http_inspector_database_capture_preview_json "$database_result_capture" "$raw_ado_net_result_capture")"
 run_id="$(http_inspector_generate_run_id)"
 package_feed_msbuild_path="$(http_inspector_msbuild_path "$package_feed")"
 package_feed_msbuild_path="$(http_inspector_xml_escape "$package_feed_msbuild_path")"
@@ -152,6 +160,7 @@ echo "  using HttpInspector.Adapter;" >&2
 echo "  services.AddHttpInspectorAdapter(); or builder.Services.AddHttpInspectorAdapter();" >&2
 if [[ $database_result_capture -eq 1 ]]; then
   echo "- Opt-in database result capture: only verified Dapper scopes in the referenced DBFactory project" >&2
+  [[ $raw_ado_net_result_capture -eq 0 ]] || echo "- Opt-in raw ADO.NET capture: only verified no-argument terminal command calls in the referenced DBFactory project" >&2
 fi
 
 if [[ $dry_run -eq 1 ]]; then

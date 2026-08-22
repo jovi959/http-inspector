@@ -13,6 +13,8 @@ This directory belongs to the existing `HttpInspector.Adapter` family. Its integ
 ./adapters/dotnet/HttpInspector.Adapter.Integration/recover.sh --project /absolute/path/to/project
 ```
 
+Database result capture is opt-in. Add `--database-result-capture` to enable only verified Dapper scopes, then add `--raw-ado-net-result-capture` as well to route only verified, no-argument raw `ExecuteReaderAsync`, `ExecuteScalarAsync`, and `ExecuteNonQueryAsync` calls through the factory-owned capture boundary. The read-only `inspect.sh --json` preview lists each source file it would change and the raw patterns it deliberately leaves unchanged, including static helper scopes and unread readers.
+
 The wrapper's command after `--` is the developer's normal project command. The integration engine itself never invokes `dotnet` or NuGet. macOS uses its installed Bash. Windows uses Git Bash, which is an explicit prerequisite for these `.sh` entrypoints.
 
 ## Supported project seam

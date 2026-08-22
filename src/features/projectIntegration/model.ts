@@ -28,6 +28,16 @@ export interface DatabaseResultCapturePreview {
   readonly factoryFile: string | null;
   readonly dapperLocations: readonly string[];
   readonly dapperFiles: readonly string[];
+  readonly rawAdoNetResultCapture: RawAdoNetResultCapturePreview;
+}
+
+export interface RawAdoNetResultCapturePreview {
+  readonly requested: boolean;
+  readonly eligible: boolean;
+  readonly reason: string | null;
+  readonly locations: readonly string[];
+  readonly files: readonly string[];
+  readonly unsupportedLocations: readonly string[];
 }
 
 export interface IntegrationPreview {

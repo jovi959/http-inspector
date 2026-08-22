@@ -17,7 +17,7 @@ pub struct IntegrationServiceConfig {
 pub type CurrentEndpoint = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
 struct Selection { path: PathBuf }
-struct PreviewState { path: PathBuf, project_file: Option<String>, endpoint: String, database_result_capture: bool, file_hashes: Vec<(PathBuf, String)>, created_at: Instant }
+struct PreviewState { path: PathBuf, project_file: Option<String>, endpoint: String, database_result_capture: bool, raw_ado_net_result_capture: bool, file_hashes: Vec<(PathBuf, String)>, created_at: Instant }
 
 pub struct IntegrationService {
     config: IntegrationServiceConfig,
@@ -66,6 +66,7 @@ impl IntegrationService {
         let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), request.endpoint.clone(), "--state-root".into(), self.config.state_root.display().to_string(), "--json".into()];
         if let Some(project_file) = &request.project_file { arguments.extend(["--project-file".into(), project_file.clone()]); }
         if request.database_result_capture { arguments.push("--database-result-capture".into()); }
+        if request.raw_ado_net_result_capture { arguments.push("--raw-ado-net-result-capture".into()); }
         let value = self.run("inspect.sh", arguments)?;
         let choices = serde_json::from_value::<Vec<ProjectChoice>>(value.get("choices").cloned().unwrap_or_else(|| serde_json::json!([])))
             .map_err(|error| IntegrationError::new("invalidInspectResult", error.to_string()))?;
@@ -78,18 +79,21 @@ impl IntegrationService {
             "databaseProjectFile": null,
             "factoryFile": null,
             "dapperLocations": [],
-            "dapperFiles": []
+            "dapperFiles": [],
+            "rawAdoNetResultCapture": { "requested": request.raw_ado_net_result_capture, "eligible": !request.raw_ado_net_result_capture, "reason": null, "locations": [], "files": [], "unsupportedLocations": [] }
         }))).map_err(|error| IntegrationError::new("invalidDatabaseCapturePreview", error.to_string()))?;
         let mut preview_files = ["projectFile", "compositionFile"].into_iter().filter_map(|key| value.get(key).and_then(|value| value.as_str()).map(str::to_owned)).collect::<Vec<_>>();
         if database_result_capture.requested && database_result_capture.eligible {
             preview_files.extend(database_result_capture.database_project_file.iter().cloned());
             preview_files.extend(database_result_capture.factory_file.iter().cloned());
             preview_files.extend(database_result_capture.dapper_files.iter().cloned());
+            preview_files.extend(database_result_capture.raw_ado_net_result_capture.files.iter().cloned());
         }
-        let preview_token = if choice_required || (request.database_result_capture && !database_result_capture.eligible) { None } else {
+        let raw_ado_net_ineligible = request.raw_ado_net_result_capture && !database_result_capture.raw_ado_net_result_capture.eligible;
+        let preview_token = if choice_required || (request.database_result_capture && !database_result_capture.eligible) || raw_ado_net_ineligible { None } else {
             let token = Uuid::new_v4().to_string();
             let file_hashes = preview_files.iter().map(|file| hash_file(Path::new(file)).map(|hash| (PathBuf::from(file), hash))).collect::<Result<Vec<_>, _>>()?;
-            self.previews.lock().map_err(lock_error)?.insert(token.clone(), PreviewState { path: path.clone(), project_file: request.project_file.clone(), endpoint: request.endpoint.clone(), database_result_capture: request.database_result_capture, file_hashes, created_at: Instant::now() });
+            self.previews.lock().map_err(lock_error)?.insert(token.clone(), PreviewState { path: path.clone(), project_file: request.project_file.clone(), endpoint: request.endpoint.clone(), database_result_capture: request.database_result_capture, raw_ado_net_result_capture: request.raw_ado_net_result_capture, file_hashes, created_at: Instant::now() });
             Some(token)
         };
         let package: PackageIdentity = serde_json::from_value(value.get("package").cloned().unwrap_or_else(|| self.package_json())).map_err(|error| IntegrationError::new("invalidPackageIdentity", error.to_string()))?;
@@ -98,7 +102,7 @@ impl IntegrationService {
         Ok(IntegrationPreview { preview_token, choice_required, choices, project_root: preview_project_root,
             project_file: value.get("projectFile").and_then(|value| value.as_str()).map(str::to_owned), composition_file: value.get("compositionFile").and_then(|value| value.as_str()).map(str::to_owned),
             strategy: value.get("strategy").and_then(|value| value.as_str()).unwrap_or("dotnet-multiclient-nuget-bash-v4").to_owned(), endpoint: request.endpoint, package,
-            operations: integration_operations(request.database_result_capture), coverage, database_result_capture })
+            operations: integration_operations(request.database_result_capture, request.raw_ado_net_result_capture), coverage, database_result_capture })
     }
 
     pub fn apply(&self, request: ApplyRequest) -> Result<OperationResult, IntegrationError> {
@@ -113,7 +117,7 @@ impl IntegrationService {
             }
         }
         let _operation = self.acquire_operation(preview.path.clone())?;
-        let mut arguments = self.operation_arguments(&preview.path, preview.project_file.as_deref(), &preview.endpoint, preview.database_result_capture);
+        let mut arguments = self.operation_arguments(&preview.path, preview.project_file.as_deref(), &preview.endpoint, preview.database_result_capture, preview.raw_ado_net_result_capture);
         arguments.push("--json".into());
         serde_json::from_value(self.run("pre-run.sh", arguments)?).map_err(|error| IntegrationError::new("invalidApplyResult", error.to_string()))
     }
@@ -158,13 +162,14 @@ impl IntegrationService {
         Ok(value)
     }
 
-    fn operation_arguments(&self, path: &Path, project_file: Option<&str>, endpoint: &str, database_result_capture: bool) -> Vec<String> {
+    fn operation_arguments(&self, path: &Path, project_file: Option<&str>, endpoint: &str, database_result_capture: bool, raw_ado_net_result_capture: bool) -> Vec<String> {
         let payload = self.payload.as_ref().expect("availability checked");
         let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), endpoint.into(), "--state-root".into(), self.config.state_root.display().to_string(),
             "--package-file".into(), payload.package_file.display().to_string(), "--package-id".into(), EMBEDDED_PACKAGE_ID.into(), "--package-version".into(), EMBEDDED_PACKAGE_VERSION.into(),
             "--payload-root".into(), payload.root.display().to_string(), "--payload-digest".into(), EMBEDDED_PAYLOAD_DIGEST.into()];
         if let Some(project_file) = project_file { arguments.extend(["--project-file".into(), project_file.into()]); }
         if database_result_capture { arguments.push("--database-result-capture".into()); }
+        if raw_ado_net_result_capture { arguments.push("--raw-ado-net-result-capture".into()); }
         arguments
     }
 
@@ -195,7 +200,7 @@ impl IntegrationService {
     }
 }
 
-fn integration_operations(database_result_capture: bool) -> Vec<String> {
+fn integration_operations(database_result_capture: bool, raw_ado_net_result_capture: bool) -> Vec<String> {
     let mut operations = vec![
         "Add project-scoped private local NuGet feed".into(),
         "Add exact private PackageReference".into(),
@@ -203,6 +208,9 @@ fn integration_operations(database_result_capture: bool) -> Vec<String> {
     ];
     if database_result_capture {
         operations.push("Add an opt-in Dapper database-result wrapper only at verified factory call sites".into());
+    }
+    if raw_ado_net_result_capture {
+        operations.push("Replace only verified raw ADO.NET terminal calls with factory-owned capture helpers".into());
     }
     operations
 }

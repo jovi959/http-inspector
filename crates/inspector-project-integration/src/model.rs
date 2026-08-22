@@ -48,6 +48,8 @@ pub struct PreviewRequest {
     pub endpoint: String,
     #[serde(default)]
     pub database_result_capture: bool,
+    #[serde(default)]
+    pub raw_ado_net_result_capture: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +85,22 @@ pub struct DatabaseResultCapturePreview {
     pub dapper_locations: Vec<String>,
     #[serde(default)]
     pub dapper_files: Vec<String>,
+    #[serde(default)]
+    pub raw_ado_net_result_capture: RawAdoNetResultCapturePreview,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RawAdoNetResultCapturePreview {
+    pub requested: bool,
+    pub eligible: bool,
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub locations: Vec<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub unsupported_locations: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

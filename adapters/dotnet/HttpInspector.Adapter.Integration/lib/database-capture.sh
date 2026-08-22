@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# The database result path is deliberately narrow. It changes only Dapper scopes that use a
-# conventional DBFactory.GetConnection() pattern and leaves raw ADO.NET commands untouched.
+# The database result path is deliberately narrow. It changes only verified Dapper scopes and
+# verified terminal raw ADO.NET calls owned by a conventional DBFactory.
 
 DATABASE_CAPTURE_PROJECT_FILE=""
 DATABASE_CAPTURE_FACTORY_FILE=""
@@ -13,7 +13,12 @@ DATABASE_CAPTURE_CONSTRUCTOR_NAME=""
 DATABASE_CAPTURE_FACTORY_USINGS=()
 DATABASE_CAPTURE_DAPPER_FILES=()
 DATABASE_CAPTURE_DAPPER_LOCATIONS=()
+DATABASE_CAPTURE_RAW_ADO_NET_FILES=()
+DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS=()
+DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS=()
 DATABASE_CAPTURE_REUSE_AVAILABLE=0
+DATABASE_CAPTURE_DAPPER_REQUESTED=0
+DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED=0
 
 http_inspector_database_capture_reset() {
   DATABASE_CAPTURE_PROJECT_FILE=""
@@ -26,6 +31,9 @@ http_inspector_database_capture_reset() {
   DATABASE_CAPTURE_FACTORY_USINGS=()
   DATABASE_CAPTURE_DAPPER_FILES=()
   DATABASE_CAPTURE_DAPPER_LOCATIONS=()
+  DATABASE_CAPTURE_RAW_ADO_NET_FILES=()
+  DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS=()
+  DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS=()
   DATABASE_CAPTURE_REUSE_AVAILABLE=0
 }
 
@@ -93,6 +101,152 @@ http_inspector_database_capture_prepare_dapper_file() {
   ' "$source" > "$output"
 }
 
+http_inspector_database_capture_prepare_raw_ado_file() {
+  local source="$1"
+  local output="$2"
+  # This is intentionally conservative: only commands constructed with a connection from the
+  # file's single IDBFactory field and no-argument terminal async calls are eligible.
+  LC_ALL=C awk '
+    function identifier_before_equals(value, left, parts, count) {
+      left = value
+      sub(/=.*/, "", left)
+      gsub(/[^[:alnum:]_]/, " ", left)
+      count = split(left, parts, /[[:space:]]+/)
+      while (count > 0 && parts[count] == "") count--
+      return count > 0 ? parts[count] : ""
+    }
+    {
+      lines[NR] = $0
+      code = $0
+      gsub(/"([^"\\]|\\.)*"/, "", code)
+      line_static[NR] = static_scope_depth > 0
+      if (code ~ /(^|[[:space:]])static[[:space:]]/ && code ~ /[(]/) pending_static_scope = 1
+      opened = gsub(/{/, "{", code)
+      closed = gsub(/}/, "}", code)
+      depth += opened - closed
+      if (pending_static_scope && opened > 0) {
+        static_scope_depth = depth
+        pending_static_scope = 0
+      }
+      if (static_scope_depth > 0 && depth < static_scope_depth) static_scope_depth = 0
+      if ($0 ~ /private[[:space:]]+readonly[[:space:]]+IDBFactory[[:space:]]+/) {
+        candidate = $0
+        sub(/^.*IDBFactory[[:space:]]+/, "", candidate)
+        sub(/[^[:alnum:]_].*$/, "", candidate)
+        factory_count++
+        factory = candidate
+      }
+    }
+    END {
+      if (factory_count != 1 || factory == "") {
+        for (i = 1; i <= NR; i++) print lines[i]
+        exit
+      }
+      for (i = 1; i <= NR; i++) {
+        if (lines[i] ~ factory "[.]GetConnection[[:space:]]*[(]") {
+          connection = identifier_before_equals(lines[i])
+          if (connection != "") factory_connection[connection] = 1
+        }
+        if (lines[i] ~ /new[[:space:]]+SqlCommand|=[[:space:]]*new[[:space:]]*\(/) {
+          for (connection in factory_connection) {
+            if (lines[i] ~ "[,[:space:]]" connection "[[:space:],)]") {
+              command = identifier_before_equals(lines[i])
+              if (command != "") factory_command[command] = 1
+            }
+          }
+        }
+      }
+      for (i = 1; i <= NR; i++) {
+        for (command in factory_command) {
+          if (line_static[i]) {
+            continue
+          }
+          if (lines[i] ~ command "[.]ExecuteReaderAsync[[:space:]]*[(][[:space:]]*[)]") {
+            if (lines[i] ~ "^[[:space:]]*await[[:space:]]+" command "[.]ExecuteReaderAsync[[:space:]]*[(][[:space:]]*[)][[:space:]]*;") {
+              unsupported[i] = 1
+            } else {
+              gsub(command "[.]ExecuteReaderAsync[[:space:]]*[(][[:space:]]*[)]", factory ".ExecuteCapturedReaderAsync(" command ")", lines[i])
+              reader_capture = 1
+              changed[i] = 1
+            }
+          }
+          if (lines[i] ~ command "[.]ExecuteScalarAsync[[:space:]]*[(][[:space:]]*[)]") {
+            gsub(command "[.]ExecuteScalarAsync[[:space:]]*[(][[:space:]]*[)]", factory ".ExecuteCapturedScalarAsync(" command ")", lines[i])
+            changed[i] = 1
+          }
+          if (lines[i] ~ command "[.]ExecuteNonQueryAsync[[:space:]]*[(][[:space:]]*[)]") {
+            gsub(command "[.]ExecuteNonQueryAsync[[:space:]]*[(][[:space:]]*[)]", factory ".ExecuteCapturedNonQueryAsync(" command ")", lines[i])
+            changed[i] = 1
+          }
+        }
+      }
+      if (reader_capture) {
+        for (i = 1; i <= NR; i++) gsub(/SqlDataReader/, "System.Data.Common.DbDataReader", lines[i])
+      }
+      for (i = 1; i <= NR; i++) print lines[i]
+    }
+  ' "$source" > "$output"
+}
+
+http_inspector_database_capture_raw_source_has_unsupported_reader() {
+  local source="$1"
+  LC_ALL=C awk '
+    function identifier_before_equals(value, left, parts, count) {
+      left = value
+      sub(/=.*/, "", left)
+      gsub(/[^[:alnum:]_]/, " ", left)
+      count = split(left, parts, /[[:space:]]+/)
+      while (count > 0 && parts[count] == "") count--
+      return count > 0 ? parts[count] : ""
+    }
+    {
+      lines[NR] = $0
+      code = $0
+      gsub(/"([^"\\]|\\.)*"/, "", code)
+      line_static[NR] = static_scope_depth > 0
+      if (code ~ /(^|[[:space:]])static[[:space:]]/ && code ~ /[(]/) pending_static_scope = 1
+      opened = gsub(/{/, "{", code)
+      closed = gsub(/}/, "}", code)
+      depth += opened - closed
+      if (pending_static_scope && opened > 0) {
+        static_scope_depth = depth
+        pending_static_scope = 0
+      }
+      if (static_scope_depth > 0 && depth < static_scope_depth) static_scope_depth = 0
+      if ($0 ~ /private[[:space:]]+readonly[[:space:]]+IDBFactory[[:space:]]+/) {
+        candidate = $0
+        sub(/^.*IDBFactory[[:space:]]+/, "", candidate)
+        sub(/[^[:alnum:]_].*$/, "", candidate)
+        factory_count++
+        factory = candidate
+      }
+    }
+    END {
+      if (factory_count != 1 || factory == "") exit
+      for (i = 1; i <= NR; i++) {
+        if (lines[i] ~ factory "[.]GetConnection[[:space:]]*[(]") {
+          connection = identifier_before_equals(lines[i])
+          if (connection != "") factory_connection[connection] = 1
+        }
+        if (lines[i] ~ /new[[:space:]]+SqlCommand|=[[:space:]]*new[[:space:]]*\(/) {
+          for (connection in factory_connection) {
+            if (lines[i] ~ "[,[:space:]]" connection "[[:space:],)]") {
+              command = identifier_before_equals(lines[i])
+              if (command != "") factory_command[command] = 1
+            }
+          }
+        }
+      }
+      for (i = 1; i <= NR; i++) {
+        for (command in factory_command) {
+          if (line_static[i] && lines[i] ~ command "[.]Execute(Reader|Scalar|NonQuery)Async[[:space:]]*[(][[:space:]]*[)]") print i ": static command scope"
+          else if (lines[i] ~ "^[[:space:]]*await[[:space:]]+" command "[.]ExecuteReaderAsync[[:space:]]*[(][[:space:]]*[)][[:space:]]*;") print i ": reader result is not consumed"
+        }
+      }
+    }
+  ' "$source"
+}
+
 http_inspector_database_capture_discover() {
   local host_project="$1"
   local project candidate project_directory factory_candidates=() source candidate_output
@@ -128,19 +282,35 @@ http_inspector_database_capture_discover() {
   # constructor option types resolvable without guessing their project-specific namespace.
   done < <(LC_ALL=C sed '1s/^\xEF\xBB\xBF//' "$DATABASE_CAPTURE_FACTORY_FILE" | LC_ALL=C sed -n -E 's/^[[:space:]]*(global[[:space:]]+)?using[[:space:]]+([^;]+);[[:space:]]*$/using \2;/p')
 
+  if [[ $DATABASE_CAPTURE_DAPPER_REQUESTED -eq 1 ]]; then
+    while IFS= read -r source; do
+      [[ -n "$source" ]] || continue
+      LC_ALL=C grep -Eq 'using[[:space:]]+Dapper[[:space:]]*;' "$source" || continue
+      LC_ALL=C grep -Eq 'GetConnection[[:space:]]*\(' "$source" || continue
+      candidate_output="$(mktemp "${TMPDIR:-/tmp}/http-inspector-dapper.XXXXXX")"
+      http_inspector_database_capture_prepare_dapper_file "$source" "$candidate_output"
+      if ! cmp -s "$source" "$candidate_output"; then
+        DATABASE_CAPTURE_DAPPER_FILES+=("$source")
+        while IFS= read -r location; do
+          [[ -n "$location" ]] && DATABASE_CAPTURE_DAPPER_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$location")
+        done < <(LC_ALL=C diff -u "$source" "$candidate_output" | LC_ALL=C sed -n -E 's/^\+[^+].*/changed/p')
+      fi
+      rm -f "$candidate_output"
+    done < <(find "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")" -type f -name '*.cs' -print | LC_ALL=C sort)
+  fi
+
   while IFS= read -r source; do
     [[ -n "$source" ]] || continue
-    LC_ALL=C grep -Eq 'using[[:space:]]+Dapper[[:space:]]*;' "$source" || continue
-    LC_ALL=C grep -Eq 'GetConnection[[:space:]]*\(' "$source" || continue
-    candidate_output="$(mktemp "${TMPDIR:-/tmp}/http-inspector-dapper.XXXXXX")"
-    http_inspector_database_capture_prepare_dapper_file "$source" "$candidate_output"
+    candidate_output="$(mktemp "${TMPDIR:-/tmp}/http-inspector-raw-ado.XXXXXX")"
+    http_inspector_database_capture_prepare_raw_ado_file "$source" "$candidate_output"
     if ! cmp -s "$source" "$candidate_output"; then
-      DATABASE_CAPTURE_DAPPER_FILES+=("$source")
-      while IFS= read -r location; do
-        [[ -n "$location" ]] && DATABASE_CAPTURE_DAPPER_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$location")
-      done < <(LC_ALL=C diff -u "$source" "$candidate_output" | LC_ALL=C sed -n -E 's/^\+[^+].*/changed/p')
+      DATABASE_CAPTURE_RAW_ADO_NET_FILES+=("$source")
+      DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}")
     fi
     rm -f "$candidate_output"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$line")
+    done < <(http_inspector_database_capture_raw_source_has_unsupported_reader "$source")
   done < <(find "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")" -type f -name '*.cs' -print | LC_ALL=C sort)
 
   if [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -eq 0 ]]; then
@@ -152,18 +322,27 @@ http_inspector_database_capture_discover() {
       DATABASE_CAPTURE_REUSE_AVAILABLE=1
     fi
   fi
-  [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -gt 0 || $DATABASE_CAPTURE_REUSE_AVAILABLE -eq 1 ]]
+  if [[ $DATABASE_CAPTURE_DAPPER_REQUESTED -eq 1 && ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -eq 0 && $DATABASE_CAPTURE_REUSE_AVAILABLE -eq 0 ]]; then return 1; fi
+  if [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 1 && ${#DATABASE_CAPTURE_RAW_ADO_NET_FILES[@]} -eq 0 ]]; then
+    local key
+    key="$(printf '%s' "$DATABASE_CAPTURE_PROJECT_FILE" | http_inspector_sha256_stream)"
+    [[ -f "${DATABASE_CAPTURE_STATE_ROOT:-}/database-adoptions/$key/raw-ado-net-active" ]] || return 1
+  fi
+  [[ $DATABASE_CAPTURE_DAPPER_REQUESTED -eq 1 || $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 1 ]]
 }
 
 http_inspector_database_capture_preview_json() {
   local requested="$1"
+  local raw_requested="$2"
   local separator="" location source
   if [[ "$requested" != "1" ]]; then
-    printf '{"requested":false,"eligible":true,"reason":null,"databaseProjectFile":null,"factoryFile":null,"dapperLocations":[],"dapperFiles":[]}'
+    printf '{"requested":false,"eligible":true,"reason":null,"databaseProjectFile":null,"factoryFile":null,"dapperLocations":[],"dapperFiles":[],"rawAdoNetResultCapture":{"requested":false,"eligible":true,"reason":null,"locations":[],"files":[],"unsupportedLocations":[]}}'
     return
   fi
+  DATABASE_CAPTURE_DAPPER_REQUESTED="$requested"
+  DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED="$raw_requested"
   if ! http_inspector_database_capture_discover "$project_file"; then
-    printf '{"requested":true,"eligible":false,"reason":"No safe Dapper DBFactory pattern was found through the selected project reference graph.","databaseProjectFile":null,"factoryFile":null,"dapperLocations":[],"dapperFiles":[]}'
+    printf '{"requested":true,"eligible":false,"reason":"No safe database factory pattern was found through the selected project reference graph.","databaseProjectFile":null,"factoryFile":null,"dapperLocations":[],"dapperFiles":[],"rawAdoNetResultCapture":{"requested":%s,"eligible":false,"reason":"No safe raw ADO.NET terminal command pattern was found through the selected project reference graph.","locations":[],"files":[],"unsupportedLocations":[]}}' "$([[ "$raw_requested" == "1" ]] && printf true || printf false)"
     return
   fi
   printf '{"requested":true,"eligible":true,"reason":null,"databaseProjectFile":"%s","factoryFile":"%s","dapperLocations":[' \
@@ -180,7 +359,28 @@ http_inspector_database_capture_preview_json() {
     printf '%s"%s"' "$separator" "$(http_inspector_json_escape "$source")"
     separator=","
   done
-  printf ']}'
+  printf '],"rawAdoNetResultCapture":{"requested":%s,"eligible":%s,"reason":null,"locations":[' "$([[ "$raw_requested" == "1" ]] && printf true || printf false)" "$([[ "$raw_requested" == "1" ]] && printf true || printf false)"
+  separator=""
+  for location in "${DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS[@]-}"; do
+    [[ -n "$location" ]] || continue
+    printf '%s"%s"' "$separator" "$(http_inspector_json_escape "$location")"
+    separator=","
+  done
+  printf '],"files":['
+  separator=""
+  for source in "${DATABASE_CAPTURE_RAW_ADO_NET_FILES[@]-}"; do
+    [[ -n "$source" ]] || continue
+    printf '%s"%s"' "$separator" "$(http_inspector_json_escape "$source")"
+    separator=","
+  done
+  printf '],"unsupportedLocations":['
+  separator=""
+  for location in "${DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS[@]-}"; do
+    [[ -n "$location" ]] || continue
+    printf '%s"%s"' "$separator" "$(http_inspector_json_escape "$location")"
+    separator=","
+  done
+  printf ']}}'
 }
 
 http_inspector_database_capture_record_file() {
@@ -212,6 +412,7 @@ http_inspector_database_capture_render_partial_factory() {
     [[ -n "$using_directive" ]] && printf '%s\n' "$using_directive" >> "$output"
   done
   printf '%s\n' 'using System.Data.Common;' >> "$output"
+  printf '%s\n' 'using System.Threading.Tasks;' >> "$output"
   printf '%s\n\n' 'using HttpInspector.Adapter;' >> "$output"
   printf '%s\n' "namespace $DATABASE_CAPTURE_FACTORY_NAMESPACE" >> "$output"
   printf '%s\n' '{' >> "$output"
@@ -225,20 +426,57 @@ http_inspector_database_capture_render_partial_factory() {
   printf '%s\n' '            _httpInspectorDatabaseCapture = httpInspectorDatabaseCapture;' >> "$output"
   printf '%s\n' '        }' >> "$output"
   printf '%s\n' >> "$output"
-  printf '%s\n' '        public DbConnection GetDapperConnection()' >> "$output"
-  printf '%s\n' '        {' >> "$output"
-  printf '%s\n' '            var connection = GetConnection();' >> "$output"
-  printf '%s\n' '            return _httpInspectorDatabaseCapture?.Wrap(connection) ?? connection;' >> "$output"
-  printf '%s\n' '        }' >> "$output"
+  if [[ $DATABASE_CAPTURE_DAPPER_REQUESTED -eq 1 ]]; then
+    printf '%s\n' '        public DbConnection GetDapperConnection()' >> "$output"
+    printf '%s\n' '        {' >> "$output"
+    printf '%s\n' '            var connection = GetConnection();' >> "$output"
+    printf '%s\n' '            return _httpInspectorDatabaseCapture?.Wrap(connection) ?? connection;' >> "$output"
+    printf '%s\n' '        }' >> "$output"
+    printf '%s\n' >> "$output"
+  fi
+  if [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 1 ]]; then
+    printf '%s\n' '        public Task<DbDataReader> ExecuteCapturedReaderAsync(DbCommand command) => _httpInspectorDatabaseCapture?.ExecuteReaderAsync(command) ?? command.ExecuteReaderAsync();' >> "$output"
+    printf '%s\n' '        public Task<object?> ExecuteCapturedScalarAsync(DbCommand command) => _httpInspectorDatabaseCapture?.ExecuteScalarAsync(command) ?? command.ExecuteScalarAsync();' >> "$output"
+    printf '%s\n' '        public Task<int> ExecuteCapturedNonQueryAsync(DbCommand command) => _httpInspectorDatabaseCapture?.ExecuteNonQueryAsync(command) ?? command.ExecuteNonQueryAsync();' >> "$output"
+  fi
   printf '%s\n' '    }' >> "$output"
   printf '%s\n' >> "$output"
   printf '%s\n' "    public partial interface $DATABASE_CAPTURE_FACTORY_INTERFACE" >> "$output"
   printf '%s\n' '    {' >> "$output"
-  printf '%s\n' '        DbConnection GetDapperConnection();' >> "$output"
+  [[ $DATABASE_CAPTURE_DAPPER_REQUESTED -eq 0 ]] || printf '%s\n' '        DbConnection GetDapperConnection();' >> "$output"
+  [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 0 ]] || printf '%s\n' '        Task<DbDataReader> ExecuteCapturedReaderAsync(DbCommand command);' >> "$output"
+  [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 0 ]] || printf '%s\n' '        Task<object?> ExecuteCapturedScalarAsync(DbCommand command);' >> "$output"
+  [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 0 ]] || printf '%s\n' '        Task<int> ExecuteCapturedNonQueryAsync(DbCommand command);' >> "$output"
   printf '%s\n' '    }' >> "$output"
   printf '%s\n' '}' >> "$output"
   printf '%s\n\n' '#nullable restore' >> "$output"
   printf '%s\n' "// HTTP_INSPECTOR_DATABASE_CAPTURE:${run_id}:END" >> "$output"
+}
+
+http_inspector_database_capture_contains_file() {
+  local needle="$1"
+  shift
+  local candidate
+  for candidate in "$@"; do [[ "$candidate" != "$needle" ]] || return 0; done
+  return 1
+}
+
+http_inspector_database_capture_prepare_source() {
+  local source="$1"
+  local output="$2"
+  local candidate="$source"
+  local temporary=""
+  if http_inspector_database_capture_contains_file "$source" "${DATABASE_CAPTURE_DAPPER_FILES[@]-}"; then
+    temporary="$(mktemp "${TMPDIR:-/tmp}/http-inspector-database-source.XXXXXX")"
+    http_inspector_database_capture_prepare_dapper_file "$candidate" "$temporary"
+    candidate="$temporary"
+  fi
+  if http_inspector_database_capture_contains_file "$source" "${DATABASE_CAPTURE_RAW_ADO_NET_FILES[@]-}"; then
+    http_inspector_database_capture_prepare_raw_ado_file "$candidate" "$output"
+  else
+    cp "$candidate" "$output"
+  fi
+  [[ -z "$temporary" ]] || rm -f "$temporary"
 }
 
 http_inspector_database_capture_prepare_factory_file() {
@@ -261,18 +499,21 @@ http_inspector_database_capture_enable() {
   local package_id="$5"
   local package_version="$6"
   local package_feed_msbuild_path="$7"
-  local key adoption_root manifest backups_directory database_project_backup database_project_injected factory_injected generated_file generated_temp source output ordinal=0 mutation_failed=0
+  local key adoption_root manifest backups_directory database_project_backup database_project_injected factory_injected generated_file generated_temp source output ordinal=0 mutation_failed=0 processed_sources=$'\n'
 
   http_inspector_database_capture_discover "$project_file" || http_inspector_die "Database result capture is not eligible for this project. Preview the integration again."
   key="$(printf '%s' "$DATABASE_CAPTURE_PROJECT_FILE" | http_inspector_sha256_stream)"
   DATABASE_CAPTURE_ADOPTION_ROOT="$state_root/database-adoptions/$key"
   DATABASE_CAPTURE_REUSED=0
   if [[ -f "$DATABASE_CAPTURE_ADOPTION_ROOT/active" ]]; then
+    if [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 1 && ! -f "$DATABASE_CAPTURE_ADOPTION_ROOT/raw-ado-net-active" ]]; then
+      http_inspector_die "Raw ADO.NET result capture cannot join an existing Dapper-only database adoption. Remove the existing project integration first, then integrate again with raw ADO.NET capture enabled."
+    fi
     printf '%s\n' "$run_id" >> "$DATABASE_CAPTURE_ADOPTION_ROOT/participants"
     DATABASE_CAPTURE_REUSED=1
     return
   fi
-  [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -gt 0 ]] || http_inspector_die "Database result capture has no safe Dapper scopes to adopt."
+  [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -gt 0 || ${#DATABASE_CAPTURE_RAW_ADO_NET_FILES[@]} -gt 0 ]] || http_inspector_die "Database result capture has no safe Dapper or raw ADO.NET scopes to adopt."
 
   mkdir -p "$DATABASE_CAPTURE_ADOPTION_ROOT/backups"
   backups_directory="$DATABASE_CAPTURE_ADOPTION_ROOT/backups"
@@ -304,10 +545,12 @@ http_inspector_database_capture_enable() {
   [[ $mutation_failed -ne 0 ]] || http_inspector_atomic_copy "$factory_injected" "$DATABASE_CAPTURE_FACTORY_FILE" || mutation_failed=1
   [[ $mutation_failed -ne 0 ]] || http_inspector_atomic_copy "$generated_temp" "$generated_file" || mutation_failed=1
   if [[ $mutation_failed -eq 0 ]]; then
-    for source in "${DATABASE_CAPTURE_DAPPER_FILES[@]-}"; do
+    for source in "${DATABASE_CAPTURE_DAPPER_FILES[@]-}" "${DATABASE_CAPTURE_RAW_ADO_NET_FILES[@]-}"; do
       [[ -n "$source" ]] || continue
-      output="$run_directory/dapper-$ordinal.injected"
-      if ! http_inspector_database_capture_prepare_dapper_file "$source" "$output" || ! ((ordinal += 1)) || ! http_inspector_database_capture_record_file "$manifest" "$source" "$output" "$backups_directory" "$ordinal" || ! http_inspector_atomic_copy "$output" "$source"; then
+      if printf '%s' "$processed_sources" | LC_ALL=C grep -Fqx "$source"; then continue; fi
+      processed_sources+="$source"$'\n'
+      output="$run_directory/database-source-$ordinal.injected"
+      if ! http_inspector_database_capture_prepare_source "$source" "$output" || ! ((ordinal += 1)) || ! http_inspector_database_capture_record_file "$manifest" "$source" "$output" "$backups_directory" "$ordinal" || ! http_inspector_atomic_copy "$output" "$source"; then
         mutation_failed=1
         break
       fi
@@ -318,6 +561,7 @@ http_inspector_database_capture_enable() {
     http_inspector_database_capture_remove_participant "$DATABASE_CAPTURE_ADOPTION_ROOT" "$run_id" || true
     return 1
   fi
+  [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 0 ]] || printf '%s\n' active > "$DATABASE_CAPTURE_ADOPTION_ROOT/raw-ado-net-active"
 }
 
 http_inspector_database_capture_remove_participant() {

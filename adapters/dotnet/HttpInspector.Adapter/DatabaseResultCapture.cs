@@ -7,10 +7,13 @@ using System.Text.Json.Nodes;
 
 namespace HttpInspector.Adapter;
 
-/// <summary>Opt-in boundary for database factories that need bounded Dapper result capture.</summary>
+/// <summary>Opt-in boundary for database factories that need bounded Dapper or raw ADO.NET result capture.</summary>
 public interface IHttpInspectorDatabaseCapture
 {
     DbConnection Wrap(DbConnection connection);
+    Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CancellationToken cancellationToken = default);
+    Task<object?> ExecuteScalarAsync(DbCommand command, CancellationToken cancellationToken = default);
+    Task<int> ExecuteNonQueryAsync(DbCommand command, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Wraps only connections explicitly returned by an integrated database factory.</summary>
@@ -38,6 +41,43 @@ public sealed class HttpInspectorDatabaseCapture : IHttpInspectorDatabaseCapture
     {
         ArgumentNullException.ThrowIfNull(connection);
         return connection is HttpInspectorDbConnection ? connection : new HttpInspectorDbConnection(connection, this);
+    }
+
+    /// <summary>Captures a reader only when the calling factory explicitly routes the command through this boundary.</summary>
+    public async Task<DbDataReader> ExecuteReaderAsync(DbCommand command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var session = Start(command);
+        try { return new HttpInspectorDbDataReader(await command.ExecuteReaderAsync(cancellationToken), this, session); }
+        catch (Exception exception) { Fail(session, exception); throw; }
+    }
+
+    /// <summary>Captures a scalar only when the calling factory explicitly routes the command through this boundary.</summary>
+    public async Task<object?> ExecuteScalarAsync(DbCommand command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var session = Start(command);
+        try
+        {
+            var value = await command.ExecuteScalarAsync(cancellationToken);
+            CompleteScalar(session, value);
+            return value;
+        }
+        catch (Exception exception) { Fail(session, exception); throw; }
+    }
+
+    /// <summary>Captures an affected-row result only when the calling factory explicitly routes the command through this boundary.</summary>
+    public async Task<int> ExecuteNonQueryAsync(DbCommand command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var session = Start(command);
+        try
+        {
+            var value = await command.ExecuteNonQueryAsync(cancellationToken);
+            CompleteNonQuery(session, value);
+            return value;
+        }
+        catch (Exception exception) { Fail(session, exception); throw; }
     }
 
     internal DatabaseCaptureSession Start(DbCommand command)
