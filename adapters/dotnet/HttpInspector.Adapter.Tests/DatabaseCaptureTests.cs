@@ -302,6 +302,43 @@ public sealed class DatabaseCaptureTests
         Assert.Equal(6674465, rows[0].DocumentId);
     }
 
+    [Fact]
+    public async Task DB_010_dapper_capture_never_reads_a_sequential_reader_ahead_of_the_application()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("DocumentJson", typeof(string));
+        table.Columns.Add("DocumentId", typeof(int));
+        table.Rows.Add("{\"source\":\"Web\",\"documentId\":6674465}", 6674465);
+        table.Rows.Add("{\"source\":\"WSM\",\"documentId\":6674466}", 6674466);
+        table.Rows.Add("{\"source\":\"Web\",\"documentId\":6674471}", 6674471);
+        using var providerConnection = new BufferedReaderConnection(table, enforceSequentialAccess: true);
+        using var connection = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 4096, 10, 1024, 10).Wrap(providerConnection);
+        await connection.OpenAsync();
+
+        var rows = (await connection.QueryAsync<NullableDocumentRow>("select DocumentJson, DocumentId from dbo.Document")).ToArray();
+
+        Assert.Equal(3, rows.Length);
+        Assert.Equal(6674465, rows[0].DocumentId);
+        Assert.Equal(6674471, rows[2].DocumentId);
+        _ = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(3UL, completed["result"]!["rowsObserved"]!.GetValue<ulong>());
+        Assert.Equal(3, completed["result"]!["rowsCaptured"]!.GetValue<int>());
+        Assert.Equal(6674466, completed["result"]!["rows"]![1]![1]!.GetValue<int>());
+        Assert.False(completed["result"]!["truncated"]!.GetValue<bool>());
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(1);
@@ -328,7 +365,7 @@ public sealed class DatabaseCaptureTests
         public int DocumentId { get; init; }
     }
 
-    private sealed class BufferedReaderConnection(DataTable table) : DbConnection
+    private sealed class BufferedReaderConnection(DataTable table, bool enforceSequentialAccess = false) : DbConnection
     {
         private ConnectionState _state;
 
@@ -345,10 +382,10 @@ public sealed class DatabaseCaptureTests
         public override void Open() => _state = ConnectionState.Open;
         public override Task OpenAsync(CancellationToken cancellationToken) { Open(); return Task.CompletedTask; }
         protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
-        protected override DbCommand CreateDbCommand() => new BufferedReaderCommand(this, table, () => ReaderExecutions++);
+        protected override DbCommand CreateDbCommand() => new BufferedReaderCommand(this, table, () => ReaderExecutions++, enforceSequentialAccess);
     }
 
-    private sealed class BufferedReaderCommand(DbConnection connection, DataTable table, Action? onReaderExecution = null) : DbCommand
+    private sealed class BufferedReaderCommand(DbConnection connection, DataTable table, Action? onReaderExecution = null, bool enforceSequentialAccess = false) : DbCommand
     {
         private readonly SqlCommand _parametersOwner = new();
 
@@ -372,7 +409,8 @@ public sealed class DatabaseCaptureTests
         {
             ReaderExecutions++;
             onReaderExecution?.Invoke();
-            return table.CreateDataReader();
+            DbDataReader reader = table.CreateDataReader();
+            return enforceSequentialAccess ? new SequentialGuardReader(reader) : reader;
         }
 
         protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
@@ -384,6 +422,95 @@ public sealed class DatabaseCaptureTests
         {
             if (disposing) _parametersOwner.Dispose();
             base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>Models SqlClient SequentialAccess: after ordinal N is consumed, the row cannot be read at an earlier ordinal.</summary>
+    private sealed class SequentialGuardReader(DbDataReader inner) : DbDataReader
+    {
+        private int _lastOrdinal = -1;
+
+        public override int Depth => inner.Depth;
+        public override int FieldCount => inner.FieldCount;
+        public override bool HasRows => inner.HasRows;
+        public override bool IsClosed => inner.IsClosed;
+        public override int RecordsAffected => inner.RecordsAffected;
+        public override object this[int ordinal] => Guard(ordinal, () => inner[ordinal]);
+        public override object this[string name] => this[GetOrdinal(name)];
+        public override bool GetBoolean(int ordinal) => Guard(ordinal, () => inner.GetBoolean(ordinal));
+        public override byte GetByte(int ordinal) => Guard(ordinal, () => inner.GetByte(ordinal));
+        public override long GetBytes(int ordinal, long dataOffset, byte[]? buffer, int bufferOffset, int length) => Guard(ordinal, () => inner.GetBytes(ordinal, dataOffset, buffer, bufferOffset, length));
+        public override char GetChar(int ordinal) => Guard(ordinal, () => inner.GetChar(ordinal));
+        public override long GetChars(int ordinal, long dataOffset, char[]? buffer, int bufferOffset, int length) => Guard(ordinal, () => inner.GetChars(ordinal, dataOffset, buffer, bufferOffset, length));
+        public override string GetDataTypeName(int ordinal) => inner.GetDataTypeName(ordinal);
+        public override DateTime GetDateTime(int ordinal) => Guard(ordinal, () => inner.GetDateTime(ordinal));
+        public override decimal GetDecimal(int ordinal) => Guard(ordinal, () => inner.GetDecimal(ordinal));
+        public override double GetDouble(int ordinal) => Guard(ordinal, () => inner.GetDouble(ordinal));
+        public override Type GetFieldType(int ordinal) => inner.GetFieldType(ordinal);
+        public override float GetFloat(int ordinal) => Guard(ordinal, () => inner.GetFloat(ordinal));
+        public override Guid GetGuid(int ordinal) => Guard(ordinal, () => inner.GetGuid(ordinal));
+        public override short GetInt16(int ordinal) => Guard(ordinal, () => inner.GetInt16(ordinal));
+        public override int GetInt32(int ordinal) => Guard(ordinal, () => inner.GetInt32(ordinal));
+        public override long GetInt64(int ordinal) => Guard(ordinal, () => inner.GetInt64(ordinal));
+        public override string GetName(int ordinal) => inner.GetName(ordinal);
+        public override int GetOrdinal(string name) => inner.GetOrdinal(name);
+        public override string GetString(int ordinal) => Guard(ordinal, () => inner.GetString(ordinal));
+        public override object GetValue(int ordinal) => Guard(ordinal, () => inner.GetValue(ordinal));
+        public override int GetValues(object[] values)
+        {
+            var count = inner.GetValues(values);
+            if (count > 0) _lastOrdinal = count - 1;
+            return count;
+        }
+        public override bool IsDBNull(int ordinal) => Guard(ordinal, () => inner.IsDBNull(ordinal));
+        public override DataTable? GetSchemaTable() => inner.GetSchemaTable();
+        public override System.Collections.IEnumerator GetEnumerator() => ((System.Collections.IEnumerable)inner).GetEnumerator();
+
+        public override bool Read()
+        {
+            var hasRow = inner.Read();
+            _lastOrdinal = -1;
+            return hasRow;
+        }
+
+        public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
+        {
+            var hasRow = await inner.ReadAsync(cancellationToken);
+            _lastOrdinal = -1;
+            return hasRow;
+        }
+
+        public override bool NextResult()
+        {
+            var hasResult = inner.NextResult();
+            _lastOrdinal = -1;
+            return hasResult;
+        }
+
+        public override Task<bool> NextResultAsync(CancellationToken cancellationToken)
+        {
+            _lastOrdinal = -1;
+            return inner.NextResultAsync(cancellationToken);
+        }
+
+        public override void Close() => inner.Close();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        private T Guard<T>(int ordinal, Func<T> read)
+        {
+            if (ordinal < _lastOrdinal)
+            {
+                throw new InvalidOperationException($"Sequential reader attempted to move backward from ordinal {_lastOrdinal} to {ordinal}.");
+            }
+
+            var value = read();
+            _lastOrdinal = ordinal;
+            return value;
         }
     }
 }

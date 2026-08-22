@@ -1,6 +1,6 @@
 # HTTP Inspector .NET adapter test manifest
 
-adapter: `HttpInspector.Adapter` 1.4.6
+adapter: `HttpInspector.Adapter` 1.4.7
 runtime: .NET 10
 httpClient: `IHttpClientFactory` / Refit / direct `HttpClient` / direct RestSharp / WCF (`Microsoft.Extensions.Http` 10.x)
 transportProfiles: `[websocket-v1]`
@@ -86,6 +86,7 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | DB-007 | `DatabaseCaptureTests.DB_007_reader_enumeration_does_not_bypass_result_capture` | pass |
 | DB-008 | `DatabaseCaptureTests.DB_008_dapper_query_async_preserves_database_nulls` | pass |
 | DB-009 | `DatabaseCaptureTests.DB_009_dapper_query_async_does_not_consume_text_values_before_the_application_reads_them` | pass |
+| DB-010 | `DatabaseCaptureTests.DB_010_dapper_capture_never_reads_a_sequential_reader_ahead_of_the_application` | pass |
 | INT-001 | `ListenerContractTests.INT_001_valid_hello_start_and_completion_are_acknowledged_and_stored_as_one_completed_exchange` | pass |
 | INT-002 | `ListenerContractTests.INT_002_identical_requests_completed_in_reverse_order_remain_two_distinct_exchanges` | pass |
 | INT-003 | `ListenerContractTests.INT_003_source_mismatch_returns_message_error` | pass |

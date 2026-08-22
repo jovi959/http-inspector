@@ -145,21 +145,50 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
     private ulong _rowsObserved;
     private bool _columnsCaptured;
     private bool _truncated;
+    private CapturedCell?[]? _currentRow;
+    private bool[]? _currentRowObserved;
 
-    public void CaptureRow(DbDataReader reader)
+    public void BeginRow(DbDataReader reader)
     {
         CaptureSchema(reader);
+        CompleteRow();
         _rowsObserved++;
+        _currentRow = new CapturedCell?[_columns.Count];
+        _currentRowObserved = new bool[_columns.Count];
+    }
+
+    public void CaptureCell(int ordinal, object? value)
+    {
+        if (_currentRow is null || _currentRowObserved is null || ordinal < 0 || ordinal >= _currentRow.Length) return;
+        _currentRow[ordinal] = ValueNode(value, maximumCellBytes);
+        _currentRowObserved[ordinal] = true;
+    }
+
+    public void CompleteRow()
+    {
+        if (_currentRow is null || _currentRowObserved is null) return;
         if (_rows.Count >= maximumRows)
         {
             _truncated = true;
+            _currentRow = null;
+            _currentRowObserved = null;
             return;
         }
 
         var row = new JsonArray();
         for (var ordinal = 0; ordinal < _columns.Count; ordinal++)
         {
-            var cell = CaptureValue(reader, ordinal, maximumCellBytes);
+            if (!_currentRowObserved[ordinal])
+            {
+                row.Add(new JsonObject
+                {
+                    ["availability"] = "unavailable",
+                    ["reason"] = "column was not read by the application",
+                });
+                continue;
+            }
+
+            var cell = _currentRow[ordinal] ?? new CapturedCell(null, false);
             var value = cell.Value;
             var encodedLength = (ulong)Encoding.UTF8.GetByteCount(value?.ToJsonString() ?? "null");
             _truncated |= cell.Truncated;
@@ -174,6 +203,8 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
             row.Add(value);
         }
         _rows.Add(row);
+        _currentRow = null;
+        _currentRowObserved = null;
     }
 
     public void CaptureNonQuery(int affectedRows)
@@ -215,14 +246,6 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
         for (var ordinal = 0; ordinal < Math.Min(reader.FieldCount, maximumColumns); ordinal++) _columns.Add(reader.GetName(ordinal));
         _truncated = reader.FieldCount > maximumColumns;
         _columnsCaptured = true;
-    }
-
-    private static CapturedCell CaptureValue(DbDataReader reader, int ordinal, ulong maximumCellBytes)
-    {
-        if (reader.IsDBNull(ordinal)) return new CapturedCell(null, false);
-        // Capture must not consume provider streams before Dapper or application code reads the row.
-        // GetChars/GetBytes are not implemented by every DbDataReader and can advance sequential readers.
-        return ValueNode(reader.GetValue(ordinal), maximumCellBytes);
     }
 
     private static CapturedCell ValueNode(object? value, ulong maximumCellBytes) => value switch
