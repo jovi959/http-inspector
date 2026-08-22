@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
+using Dapper;
 using HttpInspector.Adapter;
 using Xunit;
 
@@ -168,6 +169,80 @@ public sealed class DatabaseCaptureTests
         Assert.Equal(1, command.ReaderExecutions);
     }
 
+    [Fact]
+    public async Task DB_006_dapper_query_async_captures_every_buffered_row()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("id", typeof(int));
+        table.Columns.Add("sequence", typeof(int));
+        table.Rows.Add(42, 1);
+        table.Rows.Add(43, 2);
+        table.Rows.Add(44, 3);
+        using var providerConnection = new BufferedReaderConnection(table);
+        using var connection = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 1024, 10, 256, 10).Wrap(providerConnection);
+        await connection.OpenAsync();
+
+        var rows = (await connection.QueryAsync<CapturedRow>("select id, sequence from dbo.students")).ToArray();
+
+        Assert.Equal(3, rows.Length);
+        Assert.Equal(1, providerConnection.ReaderExecutions);
+        _ = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(3UL, completed["result"]!["rowsObserved"]!.GetValue<ulong>());
+        Assert.Equal(3, completed["result"]!["rowsCaptured"]!.GetValue<int>());
+        Assert.False(completed["result"]!["truncated"]!.GetValue<bool>());
+        Assert.Null(completed["result"]!["reason"]);
+    }
+
+    [Fact]
+    public async Task DB_007_reader_enumeration_does_not_bypass_result_capture()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("id", typeof(int));
+        table.Rows.Add(42);
+        table.Rows.Add(43);
+        table.Rows.Add(44);
+        using var connection = new SqlConnection("Server=server.example.test;Database=school;Integrated Security=true");
+        using var command = new BufferedReaderCommand(connection, table);
+        var capture = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 1024, 10, 256, 10);
+
+        await using var reader = await capture.ExecuteReaderAsync(command);
+        var enumerated = 0;
+        foreach (var _ in reader) enumerated++;
+
+        Assert.Equal(3, enumerated);
+        _ = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(3UL, completed["result"]!["rowsObserved"]!.GetValue<ulong>());
+        Assert.Equal(3, completed["result"]!["rowsCaptured"]!.GetValue<int>());
+        Assert.False(completed["result"]!["truncated"]!.GetValue<bool>());
+        Assert.Null(completed["result"]!["reason"]);
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(1);
@@ -182,7 +257,33 @@ public sealed class DatabaseCaptureTests
         }
     }
 
-    private sealed class BufferedReaderCommand(DbConnection connection, DataTable table) : DbCommand
+    private sealed class CapturedRow
+    {
+        public int Id { get; init; }
+        public int Sequence { get; init; }
+    }
+
+    private sealed class BufferedReaderConnection(DataTable table) : DbConnection
+    {
+        private ConnectionState _state;
+
+        public int ReaderExecutions { get; private set; }
+        public override string ConnectionString { get; set; } = "Server=server.example.test;Database=school";
+        public override string Database => "school";
+        public override string DataSource => "server.example.test";
+        public override string ServerVersion => "1.0";
+        public override ConnectionState State => _state;
+        public override int ConnectionTimeout => 0;
+
+        public override void ChangeDatabase(string databaseName) { }
+        public override void Close() => _state = ConnectionState.Closed;
+        public override void Open() => _state = ConnectionState.Open;
+        public override Task OpenAsync(CancellationToken cancellationToken) { Open(); return Task.CompletedTask; }
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() => new BufferedReaderCommand(this, table, () => ReaderExecutions++);
+    }
+
+    private sealed class BufferedReaderCommand(DbConnection connection, DataTable table, Action? onReaderExecution = null) : DbCommand
     {
         private readonly SqlCommand _parametersOwner = new();
 
@@ -205,6 +306,7 @@ public sealed class DatabaseCaptureTests
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
             ReaderExecutions++;
+            onReaderExecution?.Invoke();
             return table.CreateDataReader();
         }
 

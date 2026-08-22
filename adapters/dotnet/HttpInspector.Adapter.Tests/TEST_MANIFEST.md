@@ -1,6 +1,6 @@
 # HTTP Inspector .NET adapter test manifest
 
-adapter: `HttpInspector.Adapter` 1.4.1
+adapter: `HttpInspector.Adapter` 1.4.4
 runtime: .NET 10
 httpClient: `IHttpClientFactory` / Refit / direct `HttpClient` / direct RestSharp / WCF (`Microsoft.Extensions.Http` 10.x)
 transportProfiles: `[websocket-v1]`
@@ -80,6 +80,10 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | DB-001 | `DatabaseCaptureTests.DB_001_sql_command_lifecycle_is_sent_when_the_listener_accepts_database_capture` | pass |
 | DB-002 | `DatabaseCaptureTests.DB_002_database_capture_is_not_sent_when_the_listener_does_not_advertise_the_capability` | pass |
 | DB-003 | `DatabaseCaptureTests.DB_003_database_queue_pressure_does_not_block_http_capture` | pass |
+| DB-004 | `DatabaseCaptureTests.DB_004_opt_in_result_snapshot_preserves_bounded_rows_in_the_database_protocol` | pass |
+| DB-005 | `DatabaseCaptureTests.DB_005_factory_owned_reader_capture_observes_rows_without_reexecuting_the_command` | pass |
+| DB-006 | `DatabaseCaptureTests.DB_006_dapper_query_async_captures_every_buffered_row` | pass |
+| DB-007 | `DatabaseCaptureTests.DB_007_reader_enumeration_does_not_bypass_result_capture` | pass |
 | INT-001 | `ListenerContractTests.INT_001_valid_hello_start_and_completion_are_acknowledged_and_stored_as_one_completed_exchange` | pass |
 | INT-002 | `ListenerContractTests.INT_002_identical_requests_completed_in_reverse_order_remain_two_distinct_exchanges` | pass |
 | INT-003 | `ListenerContractTests.INT_003_source_mismatch_returns_message_error` | pass |

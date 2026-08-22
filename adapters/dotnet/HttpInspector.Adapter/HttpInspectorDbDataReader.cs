@@ -37,19 +37,29 @@ internal sealed class HttpInspectorDbDataReader(DbDataReader inner, HttpInspecto
     public override object GetValue(int ordinal) => inner.GetValue(ordinal);
     public override int GetValues(object[] values) => inner.GetValues(values);
     public override bool IsDBNull(int ordinal) => inner.IsDBNull(ordinal);
-    public override IEnumerator GetEnumerator() => ((IEnumerable)inner).GetEnumerator();
+    public override IEnumerator GetEnumerator() => new CapturingEnumerator(((IEnumerable)inner).GetEnumerator(), this);
     public override DataTable? GetSchemaTable() => inner.GetSchemaTable();
 
     public override bool NextResult()
     {
-        Finish(false);
-        return inner.NextResult();
+        try
+        {
+            var hasNextResult = inner.NextResult();
+            Finish(_readerCompleted);
+            return hasNextResult;
+        }
+        catch (Exception exception) { capture.Fail(session, exception); throw; }
     }
 
     public override async Task<bool> NextResultAsync(CancellationToken cancellationToken)
     {
-        Finish(false);
-        return await inner.NextResultAsync(cancellationToken);
+        try
+        {
+            var hasNextResult = await inner.NextResultAsync(cancellationToken);
+            Finish(_readerCompleted);
+            return hasNextResult;
+        }
+        catch (Exception exception) { capture.Fail(session, exception); throw; }
     }
 
     public override bool Read()
@@ -95,5 +105,24 @@ internal sealed class HttpInspectorDbDataReader(DbDataReader inner, HttpInspecto
     {
         _readerCompleted |= readerCompleted;
         capture.Complete(session, _readerCompleted);
+    }
+
+    private bool MoveEnumeratorNext(IEnumerator enumerator)
+    {
+        try
+        {
+            var hasRow = enumerator.MoveNext();
+            if (hasRow) session.Results.CaptureRow(inner);
+            else Finish(true);
+            return hasRow;
+        }
+        catch (Exception exception) { capture.Fail(session, exception); throw; }
+    }
+
+    private sealed class CapturingEnumerator(IEnumerator innerEnumerator, HttpInspectorDbDataReader reader) : IEnumerator
+    {
+        public object Current => innerEnumerator.Current;
+        public bool MoveNext() => reader.MoveEnumeratorNext(innerEnumerator);
+        public void Reset() => innerEnumerator.Reset();
     }
 }
