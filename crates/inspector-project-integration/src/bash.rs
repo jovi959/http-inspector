@@ -14,7 +14,6 @@ use crate::IntegrationError;
 
 const CONFIGURED_BASH_FILE: &str = "git-bash-path";
 const BASH_VALIDATION_TIMEOUT: Duration = Duration::from_secs(5);
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(60);
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const TIMEOUT_DIAGNOSTIC_TIMEOUT: Duration = Duration::from_secs(1);
 const BASH_VALIDATION_COMMAND: &str = "for required in awk sed grep find sort mktemp cmp diff; do command -v \"$required\" >/dev/null 2>&1 || { printf 'Missing required Bash command: %s\\n' \"$required\" >&2; exit 127; }; done; command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || command -v openssl >/dev/null 2>&1 || { printf 'Missing required SHA-256 command: sha256sum, shasum, or openssl\\n' >&2; exit 127; }; exit 0";
@@ -52,7 +51,7 @@ pub(crate) fn select_bash(
     })?;
     let mut command = bash_command(&bash);
     command.arg("-c").arg(BASH_VALIDATION_COMMAND);
-    let output = run_bash(command, BASH_VALIDATION_TIMEOUT, "Bash validation")
+    let output = run_bash(command, Some(BASH_VALIDATION_TIMEOUT), "Bash validation")
         .map_err(|error| IntegrationError::new("bashValidationFailed", error.message))?;
     if !output.status.success() {
         let diagnostics = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -201,7 +200,9 @@ pub(crate) fn run_json(
 ) -> Result<serde_json::Value, IntegrationError> {
     let mut command = bash_command(bash);
     command.arg(script).args(arguments);
-    let output = run_bash(command, SCRIPT_TIMEOUT, "integration script")?;
+    // Integration can legitimately take a long time on large projects or slower disks.
+    // Let the script complete rather than terminating a reversible integration partway through.
+    let output = run_bash(command, None, "integration script")?;
     if !output.status.success() {
         return Err(IntegrationError::new(
             "scriptFailed",
@@ -228,7 +229,7 @@ fn bash_command(bash: &Path) -> Command {
 
 fn run_bash(
     mut command: Command,
-    timeout: Duration,
+    timeout: Option<Duration>,
     operation: &str,
 ) -> Result<BashOutput, IntegrationError> {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -244,21 +245,26 @@ fn run_bash(
     // Start draining before waiting so a full OS pipe cannot prevent Bash from exiting.
     let stdout_reader = read_pipe(stdout);
     let stderr_reader = read_pipe(stderr);
-    let status = match child
-        .wait_timeout(timeout)
-        .map_err(|error| IntegrationError::new("bashWaitFailed", error.to_string()))?
-    {
-        Some(status) => status,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            let diagnostics = receive_pipe(stderr_reader, operation, TIMEOUT_DIAGNOSTIC_TIMEOUT)
-                .unwrap_or_default();
-            return Err(IntegrationError::new(
-                "operationTimedOut",
-                timeout_message(operation, timeout, &diagnostics),
-            ));
-        }
+    let status = match timeout {
+        Some(timeout) => match child
+            .wait_timeout(timeout)
+            .map_err(|error| IntegrationError::new("bashWaitFailed", error.to_string()))?
+        {
+            Some(status) => status,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let diagnostics = receive_pipe(stderr_reader, operation, TIMEOUT_DIAGNOSTIC_TIMEOUT)
+                    .unwrap_or_default();
+                return Err(IntegrationError::new(
+                    "operationTimedOut",
+                    timeout_message(operation, timeout, &diagnostics),
+                ));
+            }
+        },
+        None => child
+            .wait()
+            .map_err(|error| IntegrationError::new("bashWaitFailed", error.to_string()))?,
     };
     let stdout = receive_pipe(stdout_reader, operation, OUTPUT_DRAIN_TIMEOUT)?;
     let stderr = receive_pipe(stderr_reader, operation, OUTPUT_DRAIN_TIMEOUT)?;
@@ -352,6 +358,17 @@ mod tests {
     }
 
     #[test]
+    fn integration_scripts_are_not_subject_to_an_execution_deadline() {
+        let (directory, script) = test_script(
+            "sleep 0.1; printf '{\\\"completed\\\":true}'",
+        );
+        let value = run_json(&bash_for_test(), &script, &[])
+            .expect("integration scripts should be allowed to complete");
+        assert_eq!(value["completed"].as_bool(), Some(true));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn validates_the_selected_non_interactive_bash_and_required_utilities() {
         let state_root = env::temp_dir().join(format!(
             "http-inspector-bash-state-{}",
@@ -369,7 +386,7 @@ mod tests {
         let (directory, script) = test_script("while :; do :; done");
         let mut command = bash_command(&bash_for_test());
         command.arg(&script);
-        let error = run_bash(command, Duration::from_millis(25), "test operation")
+        let error = run_bash(command, Some(Duration::from_millis(25)), "test operation")
             .expect_err("infinite Bash script must time out");
         assert_eq!(error.code, "operationTimedOut");
         let _ = fs::remove_dir_all(directory);
