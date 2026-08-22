@@ -1,6 +1,6 @@
 # HTTP Inspector .NET adapter test manifest
 
-adapter: `HttpInspector.Adapter` 1.4.4
+adapter: `HttpInspector.Adapter` 1.4.5
 runtime: .NET 10
 httpClient: `IHttpClientFactory` / Refit / direct `HttpClient` / direct RestSharp / WCF (`Microsoft.Extensions.Http` 10.x)
 transportProfiles: `[websocket-v1]`

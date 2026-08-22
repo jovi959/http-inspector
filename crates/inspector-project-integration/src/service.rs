@@ -63,10 +63,14 @@ impl IntegrationService {
         self.ensure_endpoint_current(&request.endpoint)?;
         let path = self.selections.lock().map_err(lock_error)?.get(&request.selection_token).map(|selection| selection.path.clone())
             .ok_or_else(|| IntegrationError::new("selectionExpired", "Select the project folder again."))?;
-        let mut arguments = vec!["--project".into(), path.display().to_string(), "--endpoint".into(), request.endpoint.clone(), "--state-root".into(), self.config.state_root.display().to_string(), "--json".into()];
-        if let Some(project_file) = &request.project_file { arguments.extend(["--project-file".into(), project_file.clone()]); }
-        if request.database_result_capture { arguments.push("--database-result-capture".into()); }
-        if request.raw_ado_net_result_capture { arguments.push("--raw-ado-net-result-capture".into()); }
+        let mut arguments = self.operation_arguments(
+            &path,
+            request.project_file.as_deref(),
+            &request.endpoint,
+            request.database_result_capture,
+            request.raw_ado_net_result_capture,
+        );
+        arguments.push("--json".into());
         let value = self.run("inspect.sh", arguments)?;
         let choices = serde_json::from_value::<Vec<ProjectChoice>>(value.get("choices").cloned().unwrap_or_else(|| serde_json::json!([])))
             .map_err(|error| IntegrationError::new("invalidInspectResult", error.to_string()))?;
@@ -295,6 +299,39 @@ mod tests {
     fn hosted_selection_rejects_relative_paths_before_canonicalizing() {
         let error = canonical_project_path(Path::new("relative/project")).expect_err("relative paths must not resolve against the service process");
         assert_eq!(error.code, "invalidProjectPath");
+    }
+
+    #[test]
+    fn preview_forwards_the_materialized_package_to_the_inspection_script() {
+        let root = std::env::temp_dir().join(format!("http-inspector-preview-{}", uuid::Uuid::new_v4()));
+        let project = root.join("project");
+        fs::create_dir_all(&project).expect("create project fixture");
+        fs::write(project.join("Preview.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk.Web\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>")
+            .expect("write project file");
+        fs::write(project.join("Program.cs"), "var builder = WebApplication.CreateBuilder(args);\nbuilder.Services.AddControllers();\n")
+            .expect("write composition file");
+        let service = IntegrationService::new(IntegrationServiceConfig {
+            state_root: root.join("state"),
+            runtime: IntegrationRuntime::HostedLocal,
+            transport: IntegrationTransport::SameOriginHttp,
+            folder_selection: FolderSelection::ServiceLocalPath,
+            current_endpoint: None,
+        });
+        let selection = service.select(SelectProjectRequest { path: project.display().to_string() })
+            .expect("select project");
+
+        let preview = service.preview(PreviewRequest {
+            selection_token: selection.selection_token,
+            project_file: None,
+            endpoint: "ws://127.0.0.1:53662/v1/capture".into(),
+            database_result_capture: false,
+            raw_ado_net_result_capture: false,
+        }).expect("inspection must receive the materialized package path");
+
+        assert_eq!(preview.package.id, EMBEDDED_PACKAGE_ID);
+        assert_eq!(preview.package.version, EMBEDDED_PACKAGE_VERSION);
+        assert!(preview.preview_token.is_some());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]

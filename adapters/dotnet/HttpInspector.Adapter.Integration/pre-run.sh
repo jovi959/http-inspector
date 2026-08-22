@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 package_id="HttpInspector.Adapter"
-package_version="1.4.3"
+package_version="1.4.5"
 package_feed="$script_dir/../HttpInspector.Adapter/bundle/nuget-feed"
 package_file="$package_feed/$package_id.$package_version.nupkg"
 package_digest_file="$package_file.sha256"

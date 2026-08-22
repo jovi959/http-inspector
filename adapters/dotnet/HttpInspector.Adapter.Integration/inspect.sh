@@ -9,6 +9,11 @@ endpoint="ws://127.0.0.1:53662/v1/capture"
 state_root=""
 database_result_capture=0
 raw_ado_net_result_capture=0
+package_file=""
+package_id=""
+package_version=""
+payload_root=""
+payload_digest=""
 
 source "$script_dir/lib/common.sh"
 
@@ -22,6 +27,11 @@ while [[ $# -gt 0 ]]; do
     --project-file) http_inspector_require_value "$1" "${2:-}"; project_file="$2"; shift 2 ;;
     --endpoint) http_inspector_require_value "$1" "${2:-}"; endpoint="$2"; shift 2 ;;
     --state-root) http_inspector_require_value "$1" "${2:-}"; state_root="$2"; shift 2 ;;
+    --package-file) http_inspector_require_value "$1" "${2:-}"; package_file="$2"; shift 2 ;;
+    --package-id) http_inspector_require_value "$1" "${2:-}"; package_id="$2"; shift 2 ;;
+    --package-version) http_inspector_require_value "$1" "${2:-}"; package_version="$2"; shift 2 ;;
+    --payload-root) http_inspector_require_value "$1" "${2:-}"; payload_root="$2"; shift 2 ;;
+    --payload-digest) http_inspector_require_value "$1" "${2:-}"; payload_digest="$2"; shift 2 ;;
     --database-result-capture) database_result_capture=1; shift ;;
     --raw-ado-net-result-capture) raw_ado_net_result_capture=1; shift ;;
     --json) shift ;;
@@ -54,6 +64,11 @@ fi
 arguments=(--project "$project_root" --endpoint "$endpoint" --dry-run --json)
 [[ -z "$project_file" ]] || arguments+=(--project-file "$project_file")
 [[ -z "$state_root" ]] || arguments+=(--state-root "$state_root")
+[[ -z "$package_file" ]] || arguments+=(--package-file "$package_file")
+[[ -z "$package_id" ]] || arguments+=(--package-id "$package_id")
+[[ -z "$package_version" ]] || arguments+=(--package-version "$package_version")
+[[ -z "$payload_root" ]] || arguments+=(--payload-root "$payload_root")
+[[ -z "$payload_digest" ]] || arguments+=(--payload-digest "$payload_digest")
 [[ $database_result_capture -eq 0 ]] || arguments+=(--database-result-capture)
 [[ $raw_ado_net_result_capture -eq 0 ]] || arguments+=(--raw-ado-net-result-capture)
 exec "$script_dir/pre-run.sh" "${arguments[@]}"
