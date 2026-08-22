@@ -260,7 +260,8 @@ http_inspector_database_capture_discover() {
       if LC_ALL=C grep -Eq 'public[[:space:]]+(partial[[:space:]]+)?class[[:space:]]+[[:alnum:]_]*DBFactory[[:space:]]*:' "$candidate" && LC_ALL=C grep -Eq 'public[[:space:]]+SqlConnection[[:space:]]+GetConnection[[:space:]]*\(' "$candidate"; then
         factory_candidates+=("$candidate|$project")
       fi
-    done < <(find "$project_directory" -maxdepth 2 -type f -name '*DBFactory.cs' -print | LC_ALL=C sort)
+    # Prune nested directories without GNU find's -maxdepth extension; retain the original two-level factory search.
+    done < <(find "$project_directory" -type d -path "$project_directory/*/*" -prune -o -type f -name '*DBFactory.cs' -print | LC_ALL=C sort)
   done < <(http_inspector_database_capture_project_closure "$host_project")
 
   [[ ${#factory_candidates[@]} -eq 1 ]] || return 1

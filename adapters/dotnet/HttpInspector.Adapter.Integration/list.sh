@@ -68,5 +68,6 @@ while IFS= read -r pointer; do
     "$(http_inspector_json_escape "$validity")" "$active" "$payload_available" \
     "$(http_inspector_json_escape "$payload_root")" "$(http_inspector_json_escape "$payload_digest")"
   separator=","
-done < <(find "$state_root/integrations" -mindepth 2 -maxdepth 2 -type f -name active-receipt 2>/dev/null | LC_ALL=C sort)
+# Prune nested run directories without GNU find's -mindepth/-maxdepth extensions.
+done < <(find "$state_root/integrations" -type d -path "$state_root/integrations/*/*" -prune -o -type f -name active-receipt -print 2>/dev/null | LC_ALL=C sort)
 printf ']}\n'
