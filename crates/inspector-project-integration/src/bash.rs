@@ -14,12 +14,10 @@ use crate::IntegrationError;
 
 const CONFIGURED_BASH_FILE: &str = "git-bash-path";
 const BASH_VALIDATION_TIMEOUT: Duration = Duration::from_secs(5);
-const PATH_CONVERSION_TIMEOUT: Duration = Duration::from_secs(5);
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(60);
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const TIMEOUT_DIAGNOSTIC_TIMEOUT: Duration = Duration::from_secs(1);
 const BASH_VALIDATION_COMMAND: &str = "for required in awk sed grep find sort mktemp cmp diff; do command -v \"$required\" >/dev/null 2>&1 || { printf 'Missing required Bash command: %s\\n' \"$required\" >&2; exit 127; }; done; command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || command -v openssl >/dev/null 2>&1 || { printf 'Missing required SHA-256 command: sha256sum, shasum, or openssl\\n' >&2; exit 127; }; exit 0";
-const WINDOWS_CYGPATH_VALIDATION_COMMAND: &str = "command -v cygpath >/dev/null 2>&1 || { printf 'Missing required Git Bash command: cygpath\\n' >&2; exit 127; }; ";
 
 #[derive(Debug)]
 struct BashOutput {
@@ -53,12 +51,7 @@ pub(crate) fn select_bash(
         )
     })?;
     let mut command = bash_command(&bash);
-    let validation_command = if cfg!(windows) {
-        format!("{WINDOWS_CYGPATH_VALIDATION_COMMAND}{BASH_VALIDATION_COMMAND}")
-    } else {
-        BASH_VALIDATION_COMMAND.into()
-    };
-    command.arg("-c").arg(validation_command);
+    command.arg("-c").arg(BASH_VALIDATION_COMMAND);
     let output = run_bash(command, BASH_VALIDATION_TIMEOUT, "Bash validation")
         .map_err(|error| IntegrationError::new("bashValidationFailed", error.message))?;
     if !output.status.success() {
@@ -127,16 +120,16 @@ fn normalize_bash_path(selected_path: &Path) -> Option<PathBuf> {
     selected_path.is_file().then(|| selected_path.to_path_buf())
 }
 
-pub(crate) fn to_bash_path(bash: &Path, path: &Path) -> Result<String, IntegrationError> {
+pub(crate) fn to_bash_path(_bash: &Path, path: &Path) -> Result<String, IntegrationError> {
     if cfg!(windows) {
-        return convert_path(bash, "cygpath -u -- \"$1\"", &native_path_text(path));
+        return windows_path_to_bash(&native_path_text(path));
     }
     Ok(path.display().to_string())
 }
 
-pub(crate) fn to_native_path(bash: &Path, path: &str) -> Result<PathBuf, IntegrationError> {
+pub(crate) fn to_native_path(_bash: &Path, path: &str) -> Result<PathBuf, IntegrationError> {
     if cfg!(windows) && path.starts_with('/') {
-        return convert_path(bash, "cygpath -w -- \"$1\"", path).map(PathBuf::from);
+        return bash_path_to_windows(path).map(PathBuf::from);
     }
     Ok(PathBuf::from(path))
 }
@@ -152,29 +145,53 @@ fn native_path_text(path: &Path) -> String {
     path
 }
 
-fn convert_path(bash: &Path, command: &str, path: &str) -> Result<String, IntegrationError> {
-    let mut process = bash_command(bash);
-    process
-        .arg("-c")
-        .arg(command)
-        .arg("http-inspector-path")
-        .arg(path);
-    let output = run_bash(process, PATH_CONVERSION_TIMEOUT, "path conversion")
-        .map_err(|error| IntegrationError::new("pathConversionFailed", error.message))?;
-    if !output.status.success() {
-        return Err(IntegrationError::new(
-            "pathConversionFailed",
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ));
+fn windows_path_to_bash(path: &str) -> Result<String, IntegrationError> {
+    let path = path.replace('\\', "/");
+    let path = path.strip_prefix("//?/").unwrap_or(&path);
+    let path = path
+        .strip_prefix("UNC/")
+        .map(|unc_path| format!("//{unc_path}"))
+        .unwrap_or_else(|| path.to_owned());
+    if path.starts_with("//") {
+        return Ok(path);
     }
-    let converted = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if converted.is_empty() {
-        return Err(IntegrationError::new(
-            "pathConversionFailed",
-            "Git Bash returned an empty converted path.",
-        ));
+    let bytes = path.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let remainder = path[2..].trim_start_matches('/');
+        return Ok(if remainder.is_empty() {
+            format!("/{drive}")
+        } else {
+            format!("/{drive}/{remainder}")
+        });
     }
-    Ok(converted)
+    Err(IntegrationError::new(
+        "pathConversionFailed",
+        format!("Unsupported Windows path for Git Bash: {path}"),
+    ))
+}
+
+fn bash_path_to_windows(path: &str) -> Result<String, IntegrationError> {
+    if let Some(unc_path) = path.strip_prefix("//") {
+        return Ok(format!("\\\\{}", unc_path.replace('/', "\\")));
+    }
+    let path = path.strip_prefix('/').unwrap_or(path);
+    let (drive, remainder) = path.split_once('/').unwrap_or((path, ""));
+    if drive.len() == 1 && drive.as_bytes()[0].is_ascii_alphabetic() {
+        return Ok(if remainder.is_empty() {
+            format!("{}:\\", drive.to_ascii_uppercase())
+        } else {
+            format!(
+                "{}:\\{}",
+                drive.to_ascii_uppercase(),
+                remainder.replace('/', "\\")
+            )
+        });
+    }
+    Err(IntegrationError::new(
+        "pathConversionFailed",
+        format!("Unsupported Git Bash path for Windows: {path}"),
+    ))
 }
 
 pub(crate) fn run_json(
@@ -356,5 +373,33 @@ mod tests {
             .expect_err("infinite Bash script must time out");
         assert_eq!(error.code, "operationTimedOut");
         let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn converts_windows_paths_without_starting_a_cygpath_process() {
+        assert_eq!(
+            windows_path_to_bash(r"C:\Users\Jovi\source repos\Project").expect("drive path"),
+            "/c/Users/Jovi/source repos/Project"
+        );
+        assert_eq!(
+            windows_path_to_bash(r"\\?\C:\Users\Jovi\Project").expect("extended drive path"),
+            "/c/Users/Jovi/Project"
+        );
+        assert_eq!(
+            windows_path_to_bash(r"\\server\share\Project").expect("UNC path"),
+            "//server/share/Project"
+        );
+        assert_eq!(
+            windows_path_to_bash(r"\\?\UNC\server\share\Project").expect("extended UNC path"),
+            "//server/share/Project"
+        );
+        assert_eq!(
+            bash_path_to_windows("/c/Users/Jovi/source repos/Project").expect("Bash drive path"),
+            r"C:\Users\Jovi\source repos\Project"
+        );
+        assert_eq!(
+            bash_path_to_windows("//server/share/Project").expect("Bash UNC path"),
+            r"\\server\share\Project"
+        );
     }
 }
