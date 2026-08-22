@@ -261,13 +261,26 @@ fn normalize_script_paths(bash: &Path, value: &mut serde_json::Value) -> Result<
     match value {
         serde_json::Value::Array(values) => for value in values { normalize_script_paths(bash, value)?; },
         serde_json::Value::Object(values) => for (key, value) in values {
-            if matches!(key.as_str(), "projectRoot" | "projectFile" | "compositionFile" | "payloadRoot" | "file" | "feed")
+            if matches!(key.as_str(), "projectRoot" | "projectFile" | "compositionFile" | "payloadRoot" | "file" | "feed" | "databaseProjectFile" | "factoryFile")
                 && value.as_str().is_some_and(|path| path.starts_with('/')) {
                 let path = value.as_str().expect("checked string path");
                 *value = serde_json::Value::String(to_native_path(bash, path)?.display().to_string());
+            } else if matches!(key.as_str(), "dapperFiles" | "files") {
+                normalize_path_array(bash, value)?;
             } else {
                 normalize_script_paths(bash, value)?;
             }
+        },
+        _ => {}
+    }
+    Ok(())
+}
+
+fn normalize_path_array(bash: &Path, value: &mut serde_json::Value) -> Result<(), IntegrationError> {
+    match value {
+        serde_json::Value::Array(values) => for value in values { normalize_path_array(bash, value)?; },
+        serde_json::Value::String(path) if path.starts_with('/') => {
+            *path = to_native_path(bash, path)?.display().to_string();
         },
         _ => {}
     }
@@ -282,5 +295,28 @@ mod tests {
     fn hosted_selection_rejects_relative_paths_before_canonicalizing() {
         let error = canonical_project_path(Path::new("relative/project")).expect_err("relative paths must not resolve against the service process");
         assert_eq!(error.code, "invalidProjectPath");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn normalizes_database_plan_paths_before_hashing() {
+        let mut value = serde_json::json!({
+            "databaseResultCapture": {
+                "databaseProjectFile": "/c/workspace/database/Database.csproj",
+                "factoryFile": "/c/workspace/api/Factory.cs",
+                "dapperFiles": ["/c/workspace/api/Dapper.cs"],
+                "rawAdoNetResultCapture": {
+                    "files": ["/c/workspace/api/RawAdo.cs"]
+                }
+            }
+        });
+
+        normalize_script_paths(Path::new(r"C:\Program Files\Git\bin\bash.exe"), &mut value)
+            .expect("database plan paths should normalize");
+
+        assert_eq!(value["databaseResultCapture"]["databaseProjectFile"], r"C:\workspace\database\Database.csproj");
+        assert_eq!(value["databaseResultCapture"]["factoryFile"], r"C:\workspace\api\Factory.cs");
+        assert_eq!(value["databaseResultCapture"]["dapperFiles"][0], r"C:\workspace\api\Dapper.cs");
+        assert_eq!(value["databaseResultCapture"]["rawAdoNetResultCapture"]["files"][0], r"C:\workspace\api\RawAdo.cs");
     }
 }
