@@ -90,8 +90,19 @@ export function ProjectIntegrationsDialog({ service, endpoint, onActiveCountChan
           })} onRawAdoNetResultCaptureChange={(enabled) => selection && void run(async () => {
             setRawAdoNetResultCapture(enabled);
             await inspectSelection(selection, preview.projectFile ?? undefined, true, enabled);
-          })} onApply={() => preview.previewToken && void run(async () => {
-            await service.apply(preview.previewToken!);
+          })} onApply={() => selection && void run(async () => {
+            // The options can be changed while a previous preview request is still
+            // completing. Refresh at the moment of confirmation so the token that
+            // authorizes mutation always represents the visible checkbox choices.
+            const confirmation = await service.preview(
+              selection.selectionToken,
+              endpoint,
+              preview.projectFile ?? undefined,
+              databaseResultCapture,
+              rawAdoNetResultCapture,
+            );
+            if (!confirmation.previewToken) throw new Error("Review the current integration plan before confirming it.");
+            await service.apply(confirmation.previewToken);
             setPreview(null);
             setSelection(null);
             await refresh();
@@ -122,7 +133,7 @@ function DatabaseResultCapturePreview({ preview }: { readonly preview: Integrati
   if (!preview.requested) return null;
   if (!preview.eligible) return <p className="integration-error">Database result capture cannot be enabled: {preview.reason}</p>;
   const raw = preview.rawAdoNetResultCapture;
-  return <div className="integration-database-preview"><strong>Database result capture</strong><span>{preview.databaseProjectFile}</span><span>{preview.factoryFile}</span><p>Only verified Dapper connection scopes are changed.</p>{preview.dapperLocations.length > 0 && <ul>{preview.dapperLocations.map((location) => <li key={location}>{location}</li>)}</ul>}{raw.requested && (raw.eligible ? <><p>Verified raw ADO.NET terminal calls will route through the generated factory helpers. Connections, transactions, query text, and parameters are unchanged.</p>{raw.locations.length > 0 && <ul>{raw.locations.map((location) => <li key={location}>{location}</li>)}</ul>}{raw.unsupportedLocations.length > 0 && <p>Left unchanged because they are unsupported for automatic conversion: {raw.unsupportedLocations.join(", ")}</p>}</> : <p className="integration-error">Raw ADO.NET result capture cannot be enabled: {raw.reason}</p>)}</div>;
+  return <div className="integration-database-preview"><strong>Database result capture</strong><span>{preview.databaseProjectFile}</span><span>{preview.factoryFile}</span><p>Only verified Dapper connection scopes are changed.</p>{preview.dapperLocations.length > 0 && <ul>{preview.dapperLocations.map((location, index) => <li key={`${location}:${index}`}>{location}</li>)}</ul>}{raw.requested && (raw.eligible ? <><p>Verified raw ADO.NET terminal calls will route through the generated factory helpers. Connections, transactions, query text, and parameters are unchanged.</p>{raw.locations.length > 0 && <ul>{raw.locations.map((location, index) => <li key={`${location}:${index}`}>{location}</li>)}</ul>}{raw.unsupportedLocations.length > 0 && <p>Left unchanged because they are unsupported for automatic conversion: {raw.unsupportedLocations.join(", ")}</p>}</> : <p className="integration-error">Raw ADO.NET result capture cannot be enabled: {raw.reason}</p>)}</div>;
 }
 
 function CoveragePreview({ coverage }: { readonly coverage: IntegrationPreview["coverage"] }) {

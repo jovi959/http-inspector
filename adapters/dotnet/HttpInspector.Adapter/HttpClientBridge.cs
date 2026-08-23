@@ -22,21 +22,56 @@ public sealed class HttpInspectorHandler : DelegatingHandler
     {
         var activity = Activity.Current;
         HttpInspectorRequestMarker.Mark(request);
-        var handle = _adapter.CaptureStarted(
-            await HttpClientCaptureMapper.ToCapturedRequestAsync(request, _adapter.MaximumBodyBytes, cancellationToken),
-            activity is null ? null : new CaptureContext(activity.TraceId.ToString(), activity.SpanId.ToString(), activity.ParentSpanId.ToString(), activity.Id),
-            _origin);
+        var context = activity is null ? null : new CaptureContext(activity.TraceId.ToString(), activity.SpanId.ToString(), activity.ParentSpanId.ToString(), activity.Id);
+        var timing = _adapter.GetCaptureStartTiming();
+        var capturedRequest = HttpClientCaptureMapper.ToCapturedRequest(request);
+        var originalContent = request.Content;
+        var handleGate = new object();
+        ExchangeHandle? handle = null;
+
+        ExchangeHandle EnsureStarted(CapturedBody? body = null)
+        {
+            lock (handleGate)
+            {
+                handle ??= _adapter.CaptureStarted(
+                    body is null ? capturedRequest : capturedRequest with { Body = body },
+                    context,
+                    _origin,
+                    timing.MonotonicStart,
+                    timing.WallClockStart);
+                return handle;
+            }
+        }
+
+        if (originalContent is null || originalContent.Headers.ContentLength == 0)
+        {
+            EnsureStarted();
+        }
+        else
+        {
+            request.Content = HttpContentObservation.WrapRequest(
+                originalContent,
+                _adapter.MaximumBodyBytes,
+                body => EnsureStarted(body),
+                (body, exception) =>
+                {
+                    var started = EnsureStarted(body);
+                    _adapter.CaptureFailed(started, new CapturedFailure("requestBody", exception.Message, false, exception.GetType().FullName));
+                });
+        }
+
         try
         {
             var response = await base.SendAsync(request, cancellationToken);
-            if (handle.IsCaptured)
+            var started = EnsureStarted();
+            if (started.IsCaptured)
             {
                 HttpClientCaptureMapper.ObserveResponse(
                     response,
                     _adapter.MaximumBodyBytes,
-                    captured => _adapter.CaptureCompleted(handle, captured),
+                    captured => _adapter.CaptureCompleted(started, captured),
                     (captured, exception) => _adapter.CaptureFailed(
-                        handle,
+                        started,
                         new CapturedFailure("interceptor", exception.Message, false, exception.GetType().FullName),
                         captured));
             }
@@ -44,23 +79,30 @@ public sealed class HttpInspectorHandler : DelegatingHandler
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _adapter.CaptureCancelled(handle, "cancellationToken");
+            _adapter.CaptureCancelled(EnsureStarted(), "cancellationToken");
             throw;
         }
         catch (OperationCanceledException exception)
         {
-            _adapter.CaptureFailed(handle, new CapturedFailure("timeout", exception.Message, true));
+            _adapter.CaptureFailed(EnsureStarted(), new CapturedFailure("timeout", exception.Message, true));
             throw;
         }
         catch (HttpRequestException exception)
         {
-            _adapter.CaptureFailed(handle, new CapturedFailure("transport", exception.Message, true, exception.StatusCode?.ToString()));
+            _adapter.CaptureFailed(EnsureStarted(), new CapturedFailure("transport", exception.Message, true, exception.StatusCode?.ToString()));
             throw;
         }
         catch (Exception exception)
         {
-            _adapter.CaptureFailed(handle, new CapturedFailure("interceptor", exception.Message, false, exception.GetType().FullName));
+            _adapter.CaptureFailed(EnsureStarted(), new CapturedFailure("interceptor", exception.Message, false, exception.GetType().FullName));
             throw;
+        }
+        finally
+        {
+            if (originalContent is not null && !ReferenceEquals(request.Content, originalContent))
+            {
+                request.Content = originalContent;
+            }
         }
     }
 }
@@ -96,27 +138,6 @@ public static class HttpClientCaptureMapper
             ResponseBody(response.Content),
             response.ReasonPhrase,
             $"HTTP/{response.Version.Major}.{response.Version.Minor}");
-    }
-
-    internal static async Task<CapturedRequest> ToCapturedRequestAsync(HttpRequestMessage request, ulong maximumBodyBytes, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var uri = request.RequestUri;
-        var body = await HttpContentObservation.CaptureReplayableRequestAsync(request.Content, maximumBodyBytes, cancellationToken);
-        return new CapturedRequest(
-            request.Method.Method,
-            uri?.AbsoluteUri ?? string.Empty,
-            Headers(request.Headers, request.Content?.Headers),
-            Query(uri),
-            body,
-            request.Method.Method,
-            uri?.Scheme,
-            uri?.Host,
-            uri?.IsDefaultPort == false ? uri.Port : null,
-            uri?.AbsolutePath,
-            PathSegments(uri),
-            uri?.Fragment is { Length: > 0 } fragment ? fragment[1..] : null,
-            null);
     }
 
     internal static void ObserveResponse(

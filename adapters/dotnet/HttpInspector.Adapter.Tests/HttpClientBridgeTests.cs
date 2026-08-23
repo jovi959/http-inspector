@@ -97,7 +97,7 @@ public sealed class HttpClientBridgeTests
     }
 
     [Fact]
-    public async Task BRG_006_does_not_consume_a_one_shot_request_stream_and_reports_its_body_unavailable()
+    public async Task BRG_006_observes_a_one_shot_request_stream_during_its_real_transport_write()
     {
         var transport = new FakeCaptureTransport();
         await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
@@ -121,7 +121,8 @@ public sealed class HttpClientBridgeTests
         var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
 
         Assert.Equal("one-shot-body", receivedBody);
-        Assert.Equal("unavailable", started["request"]!["body"]!["availability"]!.GetValue<string>());
+        Assert.Equal("captured", started["request"]!["body"]!["availability"]!.GetValue<string>());
+        Assert.Equal(Encoding.UTF8.GetBytes("one-shot-body"), Convert.FromBase64String(started["request"]!["body"]!["content"]!["value"]!.GetValue<string>()));
     }
 
     [Fact]

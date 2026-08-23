@@ -327,19 +327,25 @@ http_inspector_database_capture_discover() {
     done < <(http_inspector_database_capture_source_files "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")")
   fi
 
-  while IFS= read -r source; do
-    [[ -n "$source" ]] || continue
-    candidate_output="$(mktemp "${TMPDIR:-/tmp}/http-inspector-raw-ado.XXXXXX")"
-    http_inspector_database_capture_prepare_raw_ado_file "$source" "$candidate_output"
-    if ! cmp -s "$source" "$candidate_output"; then
-      DATABASE_CAPTURE_RAW_ADO_NET_FILES+=("$source")
-      DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}")
-    fi
-    rm -f "$candidate_output"
-    while IFS= read -r line; do
-      [[ -n "$line" ]] && DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$line")
-    done < <(http_inspector_database_capture_raw_source_has_unsupported_reader "$source")
-  done < <(http_inspector_database_capture_source_files "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")")
+  # Raw ADO.NET rewrites are strictly opt-in.  Discovery used to enumerate them for
+  # every database plan, which could add ExecuteCaptured* calls even though the
+  # generated factory correctly omitted those opt-in helpers.  Keep the preview,
+  # mutation set, and generated surface bound to the same request flag.
+  if [[ $DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED -eq 1 ]]; then
+    while IFS= read -r source; do
+      [[ -n "$source" ]] || continue
+      candidate_output="$(mktemp "${TMPDIR:-/tmp}/http-inspector-raw-ado.XXXXXX")"
+      http_inspector_database_capture_prepare_raw_ado_file "$source" "$candidate_output"
+      if ! cmp -s "$source" "$candidate_output"; then
+        DATABASE_CAPTURE_RAW_ADO_NET_FILES+=("$source")
+        DATABASE_CAPTURE_RAW_ADO_NET_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}")
+      fi
+      rm -f "$candidate_output"
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && DATABASE_CAPTURE_RAW_ADO_NET_UNSUPPORTED_LOCATIONS+=("${source#"$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")"/}:$line")
+      done < <(http_inspector_database_capture_raw_source_has_unsupported_reader "$source")
+    done < <(http_inspector_database_capture_source_files "$(dirname "$DATABASE_CAPTURE_PROJECT_FILE")")
+  fi
 
   if [[ ${#DATABASE_CAPTURE_DAPPER_FILES[@]} -eq 0 ]]; then
     local key

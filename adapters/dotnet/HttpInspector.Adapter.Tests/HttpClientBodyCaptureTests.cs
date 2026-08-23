@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.IO.Compression;
 using System.Text;
 using HttpInspector.Adapter;
@@ -38,6 +39,41 @@ public sealed class HttpClientBodyCaptureTests
         Assert.Equal("captured", capturedBody["availability"]!.GetValue<string>());
         Assert.Equal("inlineText", capturedBody["content"]!["kind"]!.GetValue<string>());
         Assert.Equal("{\"id\":42}", capturedBody["content"]!["value"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task BRG_018_custom_one_shot_batch_content_is_captured_during_the_real_transport_write()
+    {
+        var payload = Encoding.UTF8.GetBytes("--batch_123\r\nContent-Type: application/http\r\n\r\nGET /api/data/v9.2/accounts HTTP/1.1\r\n\r\n--batch_123--\r\n");
+        var transport = new FakeCaptureTransport();
+        await using var adapter = await StartAdapterAsync(transport);
+        byte[]? receivedBytes = null;
+        using var content = new OneShotContent(payload, "multipart/mixed", "batch_123");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.test/api/data/v9.2/$batch")
+        {
+            Content = content,
+        };
+        using var invoker = CreatePipeline(adapter, async outgoing =>
+        {
+            using var body = new MemoryStream();
+            await outgoing.Content!.CopyToAsync(body);
+            receivedBytes = body.ToArray();
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        await invoker.SendAsync(request, CancellationToken.None);
+        var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var capturedBody = started["request"]!["body"]!;
+
+        Assert.Same(content, request.Content);
+        Assert.Equal(1, content.WriteCount);
+        Assert.Equal(payload, receivedBytes);
+        Assert.Equal("exchange.completed", completed["type"]!.GetValue<string>());
+        Assert.Equal("captured", capturedBody["availability"]!.GetValue<string>());
+        Assert.Equal("multipart/mixed", capturedBody["mediaType"]!.GetValue<string>());
+        Assert.Equal("inlineBase64", capturedBody["content"]!["kind"]!.GetValue<string>());
+        Assert.Equal(payload, Convert.FromBase64String(capturedBody["content"]!["value"]!.GetValue<string>()));
     }
 
     [Fact]
@@ -268,6 +304,40 @@ public sealed class HttpClientBodyCaptureTests
     private sealed class DelegateHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);
+    }
+
+    private sealed class OneShotContent : HttpContent
+    {
+        private readonly byte[] _payload;
+
+        public OneShotContent(byte[] payload, string mediaType, string boundary)
+        {
+            _payload = payload;
+            Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+            Headers.ContentType.Parameters.Add(new NameValueHeaderValue("boundary", boundary));
+        }
+
+        public int WriteCount { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => WriteOnceAsync(stream, CancellationToken.None);
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken) => WriteOnceAsync(stream, cancellationToken);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _payload.Length;
+            return true;
+        }
+
+        private async Task WriteOnceAsync(Stream stream, CancellationToken cancellationToken)
+        {
+            if (WriteCount++ != 0)
+            {
+                throw new InvalidOperationException("The one-shot content was serialized more than once.");
+            }
+
+            await stream.WriteAsync(_payload, cancellationToken);
+        }
     }
 
     private sealed class NonSeekableReadStream(byte[] data) : Stream

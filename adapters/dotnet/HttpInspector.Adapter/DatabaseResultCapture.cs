@@ -145,6 +145,7 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
     private ulong _rowsObserved;
     private bool _columnsCaptured;
     private bool _truncated;
+    private bool _captureLimitReached;
     private CapturedCell?[]? _currentRow;
     private bool[]? _currentRowObserved;
 
@@ -167,7 +168,7 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
     public void CompleteRow()
     {
         if (_currentRow is null || _currentRowObserved is null) return;
-        if (_rows.Count >= maximumRows)
+        if (_captureLimitReached || _rows.Count >= maximumRows)
         {
             _truncated = true;
             _currentRow = null;
@@ -176,32 +177,40 @@ internal sealed class DatabaseResultCollector(ulong maximumBytes, int maximumRow
         }
 
         var row = new JsonArray();
+        var rowBytes = 0UL;
         for (var ordinal = 0; ordinal < _columns.Count; ordinal++)
         {
+            JsonNode? value;
+            var cellTruncated = false;
             if (!_currentRowObserved[ordinal])
             {
-                row.Add(new JsonObject
+                value = new JsonObject
                 {
                     ["availability"] = "unavailable",
                     ["reason"] = "column was not read by the application",
-                });
-                continue;
+                };
             }
-
-            var cell = _currentRow[ordinal] ?? new CapturedCell(null, false);
-            var value = cell.Value;
+            else
+            {
+                var cell = _currentRow[ordinal] ?? new CapturedCell(null, false);
+                value = cell.Value;
+                cellTruncated = cell.Truncated;
+            }
             var encodedLength = (ulong)Encoding.UTF8.GetByteCount(value?.ToJsonString() ?? "null");
-            _truncated |= cell.Truncated;
-            if (_capturedBytes + encodedLength > maximumBytes)
+            if (_capturedBytes + rowBytes + encodedLength > maximumBytes)
             {
                 _truncated = true;
-                row.Add(new JsonObject { ["availability"] = "unavailable", ["reason"] = "cell exceeds the database result capture limit" });
-                continue;
+                _captureLimitReached = true;
+                _currentRow = null;
+                _currentRowObserved = null;
+                return;
             }
 
-            _capturedBytes += encodedLength;
+            _truncated |= cellTruncated;
+            rowBytes += encodedLength;
             row.Add(value);
         }
+        _capturedBytes += rowBytes;
         _rows.Add(row);
         _currentRow = null;
         _currentRowObserved = null;

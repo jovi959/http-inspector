@@ -339,6 +339,42 @@ public sealed class DatabaseCaptureTests
         Assert.False(completed["result"]!["truncated"]!.GetValue<bool>());
     }
 
+    [Fact]
+    public async Task DB_011_result_byte_limit_keeps_only_complete_rows_and_reports_all_observed_rows()
+    {
+        var transport = new FakeCaptureTransport(acceptInitialConnection: false);
+        transport.QueueConnection(new NegotiatedSession(
+            TestValues.ConnectionId,
+            TestValues.SessionId,
+            TestValues.MaximumMessageBytes,
+            TestValues.MaximumBodyBytes,
+            new HashSet<string>(StringComparer.Ordinal) { "databaseCommandCapture" }));
+        await using var adapter = HttpInspectorAdapter.Create(TestValues.Config(), TestValues.Dependencies(transport));
+        adapter.Start();
+        await transport.ReadHelloAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        var table = new DataTable();
+        table.Columns.Add("Name", typeof(string));
+        table.Rows.Add("abcdefghij");
+        table.Rows.Add("klmnopqrst");
+        table.Rows.Add("uvwxyz0123");
+        using var providerConnection = new BufferedReaderConnection(table);
+        using var connection = new HttpInspectorDatabaseCapture(adapter, new DatabaseCommandOwnership(), 24, 10, 256, 10).Wrap(providerConnection);
+        await connection.OpenAsync();
+
+        var rows = (await connection.QueryAsync<CapturedNameRow>("select Name from dbo.Document")).ToArray();
+
+        Assert.Equal(3, rows.Length);
+        _ = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(3UL, completed["result"]!["rowsObserved"]!.GetValue<ulong>());
+        Assert.Equal(2, completed["result"]!["rowsCaptured"]!.GetValue<int>());
+        Assert.Equal(2, completed["result"]!["rows"]!.AsArray().Count);
+        Assert.Equal("abcdefghij", completed["result"]!["rows"]![0]![0]!.GetValue<string>());
+        Assert.Equal("klmnopqrst", completed["result"]!["rows"]![1]![0]!.GetValue<string>());
+        Assert.True(completed["result"]!["truncated"]!.GetValue<bool>());
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(1);
@@ -363,6 +399,11 @@ public sealed class DatabaseCaptureTests
     {
         public string? DocumentJson { get; init; }
         public int DocumentId { get; init; }
+    }
+
+    private sealed class CapturedNameRow
+    {
+        public string? Name { get; init; }
     }
 
     private sealed class BufferedReaderConnection(DataTable table, bool enforceSequentialAccess = false) : DbConnection

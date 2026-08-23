@@ -1,6 +1,6 @@
 # HTTP Inspector .NET adapter test manifest
 
-adapter: `HttpInspector.Adapter` 1.4.7
+adapter: `HttpInspector.Adapter` 1.4.11
 runtime: .NET 10
 httpClient: `IHttpClientFactory` / Refit / direct `HttpClient` / direct RestSharp / WCF (`Microsoft.Extensions.Http` 10.x)
 transportProfiles: `[websocket-v1]`
@@ -61,7 +61,7 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | BRG-003 | `HttpClientBridgeTests.BRG_003_and_NIF_001_and_NIF_002_return_the_original_response_without_waiting_for_inspector_io` | pass |
 | BRG-004 | `HttpClientBridgeTests.BRG_004_rethrows_the_original_error_after_capture_is_enqueued` | pass |
 | BRG-005 | `HttpClientBridgeTests.BRG_005_preserves_native_cancellation_semantics` | pass |
-| BRG-006 | `HttpClientBridgeTests.BRG_006_does_not_consume_a_one_shot_request_stream_and_reports_its_body_unavailable` | pass |
+| BRG-006 | `HttpClientBridgeTests.BRG_006_observes_a_one_shot_request_stream_during_its_real_transport_write` | pass |
 | BRG-007 | `HttpClientBodyCaptureTests.BRG_007_finite_request_body_is_captured_and_transport_receives_identical_bytes_and_headers` | pass |
 | BRG-008 | `HttpClientBodyCaptureTests.BRG_008_and_FID_013_and_FID_014_capture_finite_json_response_without_changing_host_visible_content` | pass |
 | BRG-009 | `HttpClientBodyCaptureTests.BRG_009_finite_binary_response_is_captured_once_and_host_receives_original_bytes` | pass |
@@ -70,6 +70,7 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | BRG-012 | `HttpClientBodyCaptureTests.BRG_012_body_observation_failure_preserves_original_exception_and_reports_unavailable_body` | pass |
 | BRG-013 | `HttpClientBridgeTests.BRG_013_collects_every_host_visible_general_and_content_header_without_an_allowlist` | pass |
 | BRG-014 | `HttpClientBridgeTests.BRG_014_does_not_invent_headers_created_after_the_final_handler_seam`; the package README documents the primary-transport boundary | pass |
+| BRG-018 | `HttpClientBodyCaptureTests.BRG_018_custom_one_shot_batch_content_is_captured_during_the_real_transport_write` | pass |
 | DMC-001 | `HttpClientBridgeTests.BRG_015_global_registration_captures_every_factory_client_once_without_per_client_edits` | pass |
 | DMC-002 | `HttpClientBridgeTests.BRG_017_real_direct_http_client_uses_the_runtime_diagnostic_bridge` | pass |
 | DMC-003 | `HttpClientBridgeTests.BRG_019_real_direct_rest_sharp_client_uses_the_runtime_diagnostic_bridge` | pass |
@@ -87,6 +88,7 @@ tddSpec: `http_inspector_adapter_tdd.spec.md` 1.6.0
 | DB-008 | `DatabaseCaptureTests.DB_008_dapper_query_async_preserves_database_nulls` | pass |
 | DB-009 | `DatabaseCaptureTests.DB_009_dapper_query_async_does_not_consume_text_values_before_the_application_reads_them` | pass |
 | DB-010 | `DatabaseCaptureTests.DB_010_dapper_capture_never_reads_a_sequential_reader_ahead_of_the_application` | pass |
+| DB-011 | `DatabaseCaptureTests.DB_011_result_byte_limit_keeps_only_complete_rows_and_reports_all_observed_rows` | pass |
 | INT-001 | `ListenerContractTests.INT_001_valid_hello_start_and_completion_are_acknowledged_and_stored_as_one_completed_exchange` | pass |
 | INT-002 | `ListenerContractTests.INT_002_identical_requests_completed_in_reverse_order_remain_two_distinct_exchanges` | pass |
 | INT-003 | `ListenerContractTests.INT_003_source_mismatch_returns_message_error` | pass |

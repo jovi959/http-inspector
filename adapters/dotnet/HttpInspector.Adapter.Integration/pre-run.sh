@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 package_id="HttpInspector.Adapter"
-package_version="1.4.7"
+package_version="1.4.11"
 package_feed="$script_dir/../HttpInspector.Adapter/bundle/nuget-feed"
 package_file="$package_feed/$package_id.$package_version.nupkg"
 package_digest_file="$package_file.sha256"
@@ -289,6 +289,11 @@ http_inspector_receipt_write "$active_receipt"
 http_inspector_write_pointer "$project_state/active-receipt" "$active_receipt"
 
 if [[ $database_result_capture -eq 1 ]]; then
+  # The dry-run preview invokes the same discovery helpers in a command
+  # substitution. Reassert the user's choices immediately before the mutable
+  # pass so the generated factory surface and its source rewrites cannot drift.
+  DATABASE_CAPTURE_DAPPER_REQUESTED="$database_result_capture"
+  DATABASE_CAPTURE_RAW_ADO_NET_REQUESTED="$raw_ado_net_result_capture"
   http_inspector_database_capture_enable "$state_root" "$project_state" "$run_id" "$run_directory" "$package_id" "$package_version" "$package_feed_msbuild_path"
   RECEIPT_DATABASE_CAPTURE_ENABLED="1"
   RECEIPT_DATABASE_ADOPTION_ROOT="$DATABASE_CAPTURE_ADOPTION_ROOT"

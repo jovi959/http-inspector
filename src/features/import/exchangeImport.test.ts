@@ -13,8 +13,10 @@ describe("exchange import", () => {
       response: { statusCode: 200, headers: [], body: null, raw: null },
     } as unknown as HttpExchange;
 
-    const imported = parseExchangeImport(JSON.stringify(createExchangeExport(exchange, "2026-08-17T00:00:00.000Z")));
+    const serialized = JSON.stringify(createExchangeExport(exchange, "2026-08-17T00:00:00.000Z"));
+    const imported = parseExchangeImport(serialized);
 
+    expect(serialized.startsWith("{")).toBe(true);
     expect(imported.exchange).toStrictEqual(exchange);
     expect(imported.exportedAt).toBe("2026-08-17T00:00:00.000Z");
   });

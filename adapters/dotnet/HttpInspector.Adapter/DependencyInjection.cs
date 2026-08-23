@@ -19,8 +19,8 @@ public sealed class HttpInspectorOptions
     public int QueueCapacity { get; set; } = 256;
     public int DatabaseQueueCapacity { get; set; } = 128;
     public ulong MaximumDatabaseCaptureBytes { get; set; } = 1024UL * 1024UL;
-    public ulong MaximumDatabaseResultCaptureBytes { get; set; } = 256UL * 1024UL;
-    public int MaximumDatabaseResultRows { get; set; } = 100;
+    public ulong MaximumDatabaseResultCaptureBytes { get; set; } = 1024UL * 1024UL;
+    public int MaximumDatabaseResultRows { get; set; } = 500;
     public ulong MaximumDatabaseResultCellBytes { get; set; } = 16UL * 1024UL;
     public int MaximumDatabaseResultColumns { get; set; } = 50;
     public TimeSpan HeartbeatInterval { get; set; } = TimeSpan.FromSeconds(15);
