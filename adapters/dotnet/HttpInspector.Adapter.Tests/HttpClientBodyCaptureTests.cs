@@ -192,6 +192,31 @@ public sealed class HttpClientBodyCaptureTests
     }
 
     [Fact]
+    public async Task BRG_020_non_success_response_completes_without_reading_or_replacing_the_application_body()
+    {
+        var transport = new FakeCaptureTransport();
+        await using var adapter = await StartAdapterAsync(transport);
+        using var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("{\"error\":\"invalid batch\"}", Encoding.UTF8, "application/json"),
+        };
+        var originalContent = response.Content;
+        using var invoker = CreatePipeline(adapter, _ => Task.FromResult(response));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.test/v9.2/$batch");
+
+        var returned = await invoker.SendAsync(request, CancellationToken.None);
+        await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Same(response, returned);
+        Assert.Same(originalContent, returned.Content);
+        Assert.Equal("exchange.completed", completed["type"]!.GetValue<string>());
+        Assert.Equal(400, completed["response"]!["statusCode"]!.GetValue<int>());
+        Assert.Equal("unavailable", completed["response"]!["body"]!["availability"]!.GetValue<string>());
+        Assert.Equal("application/json", completed["response"]!["body"]!["mediaType"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task BRG_010_unknown_length_finite_response_is_captured_at_eof_without_changing_bytes()
     {
         var expected = Encoding.UTF8.GetBytes("chunked response");

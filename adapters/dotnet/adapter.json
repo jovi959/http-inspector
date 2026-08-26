@@ -1,15 +1,15 @@
 {
   "id": "dotnet-httpclient",
   "name": ".NET multi-client capture",
-  "version": "1.4.11",
+  "version": "1.4.12",
   "payloadSpecVersion": "1.0.0",
   "integrationProtocolVersion": "1.0.0",
   "package": {
     "id": "HttpInspector.Adapter",
-    "version": "1.4.11",
-    "file": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.4.11.nupkg",
-    "sha256": "1550c261ecf1ae12aaebf5700581e8417aa94b7b02d5205ff4e75d6e969a4f74",
-    "sha256File": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.4.11.nupkg.sha256"
+    "version": "1.4.12",
+    "file": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.4.12.nupkg",
+    "sha256": "e387c4521af71ed51d3120727cf4e3d1119fdd604c1b4c265e6d3c7179b57fd7",
+    "sha256File": "HttpInspector.Adapter/bundle/nuget-feed/HttpInspector.Adapter.1.4.12.nupkg.sha256"
   },
   "integration": {
     "shell": "bash",

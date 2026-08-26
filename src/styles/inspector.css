@@ -7,6 +7,31 @@
 .inspector-view { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
 .inspector-view.is-message { display: flex; overflow: hidden; }
 .inspector-view.is-dataverse-map { display: flex; overflow: hidden; }
+.inspector-view.is-batch { display: flex; min-height: 0; overflow: hidden; }
+.batch-inspector { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.batch-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.batch-heading > div { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.batch-heading strong { color: var(--text); font-size: 14px; }
+.batch-heading span { min-width: 0; overflow-wrap: anywhere; }
+.batch-notice { margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+.batch-notice.is-error { color: var(--error); }
+.batch-warnings { margin: 0; padding: 8px 28px; border-bottom: 1px solid var(--border); background: var(--diagnostic-background); color: var(--diagnostic-text); font-size: 11px; }
+.batch-warnings li + li { margin-top: 4px; }
+.batch-layout { display: grid; min-width: 0; min-height: 0; flex: 1 1 auto; grid-template-columns: minmax(250px, .36fr) minmax(0, 1fr); }
+.batch-operation-list { min-width: 0; overflow: auto; border-right: 1px solid var(--border); background: var(--surface-muted); }
+.batch-operation-list button { display: grid; grid-template-columns: 37px 45px minmax(0, 1fr); width: 100%; gap: 7px; border: 0; border-bottom: 1px solid var(--divider-soft); padding: 8px 10px; background: transparent; color: var(--text); font: 11px var(--font-mono); text-align: left; }
+.batch-operation-list button:hover, .batch-operation-list button.is-active { background: var(--surface-tint); }
+.batch-operation-list button strong, .batch-operation-list button > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-status { font-weight: 800; }
+.batch-status.is-successful { color: var(--success); }
+.batch-status.is-failed { color: var(--error); }
+.batch-status.is-unavailable { color: var(--muted); }
+.batch-operation-detail { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.batch-detail-heading { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font: 11px var(--font-mono); }
+.batch-detail-content { min-height: 0; flex: 1 1 auto; overflow: auto; }
+.batch-headers { display: grid; gap: 14px; padding: 12px; }
+.batch-headers section { overflow: hidden; border: 1px solid var(--border); border-radius: 7px; }
+.batch-headers h3 { margin: 0; padding: 8px 11px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; text-transform: uppercase; }
 .dataverse-map-viewer { display: flex; width: 100%; min-width: 0; min-height: 0; height: 100%; flex: 1 1 auto; flex-direction: column; }
 .dataverse-map-viewer.is-maximized { position: fixed; z-index: 50; inset: 12px; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .dataverse-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }

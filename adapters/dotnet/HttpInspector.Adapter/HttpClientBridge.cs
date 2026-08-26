@@ -168,6 +168,13 @@ public static class HttpClientCaptureMapper
             return;
         }
 
+        // A caller commonly throws on a non-success status before reading the body; do not leave that real response in flight.
+        if (!response.IsSuccessStatusCode)
+        {
+            completed(captured with { Body = ResponseBody(response.Content) });
+            return;
+        }
+
         response.Content = HttpContentObservation.WrapResponse(
             response.Content,
             maximumBodyBytes,
