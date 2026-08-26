@@ -28,9 +28,14 @@ public sealed class HttpInspectorHandler : DelegatingHandler
         var originalContent = request.Content;
         var handleGate = new object();
         ExchangeHandle? handle = null;
+        CapturedResponse? pendingCompletedResponse = null;
+        (CapturedResponse Response, Exception Exception)? pendingFailedResponse = null;
 
-        ExchangeHandle EnsureStarted(CapturedBody? body = null)
+        ExchangeHandle EnsureStarted(CapturedBody? body = null, bool flushPendingResponse = true)
         {
+            ExchangeHandle started;
+            CapturedResponse? completedResponse = null;
+            (CapturedResponse Response, Exception Exception)? failedResponse = null;
             lock (handleGate)
             {
                 handle ??= _adapter.CaptureStarted(
@@ -39,8 +44,65 @@ public sealed class HttpInspectorHandler : DelegatingHandler
                     _origin,
                     timing.MonotonicStart,
                     timing.WallClockStart);
-                return handle;
+                started = handle;
+                if (flushPendingResponse)
+                {
+                    completedResponse = pendingCompletedResponse;
+                    failedResponse = pendingFailedResponse;
+                    pendingCompletedResponse = null;
+                    pendingFailedResponse = null;
+                }
             }
+
+            if (completedResponse is not null)
+            {
+                _adapter.CaptureCompleted(started, completedResponse);
+            }
+            else if (failedResponse is not null)
+            {
+                _adapter.CaptureFailed(
+                    started,
+                    new CapturedFailure("interceptor", failedResponse.Value.Exception.Message, false, failedResponse.Value.Exception.GetType().FullName),
+                    failedResponse.Value.Response);
+            }
+
+            return started;
+        }
+
+        void Complete(CapturedResponse response)
+        {
+            ExchangeHandle? started;
+            lock (handleGate)
+            {
+                started = handle;
+                if (started is null && originalContent is not null)
+                {
+                    pendingCompletedResponse = response;
+                    return;
+                }
+            }
+
+            _adapter.CaptureCompleted(started ?? EnsureStarted(), response);
+        }
+
+        void Fail(CapturedResponse response, Exception exception)
+        {
+            ExchangeHandle? started;
+            lock (handleGate)
+            {
+                started = handle;
+                if (started is null && originalContent is not null)
+                {
+                    pendingFailedResponse = (response, exception);
+                    return;
+                }
+            }
+
+            started ??= EnsureStarted();
+            _adapter.CaptureFailed(
+                started,
+                new CapturedFailure("interceptor", exception.Message, false, exception.GetType().FullName),
+                response);
         }
 
         if (originalContent is null || originalContent.Headers.ContentLength == 0)
@@ -55,7 +117,7 @@ public sealed class HttpInspectorHandler : DelegatingHandler
                 body => EnsureStarted(body),
                 (body, exception) =>
                 {
-                    var started = EnsureStarted(body);
+                    var started = EnsureStarted(body, flushPendingResponse: false);
                     _adapter.CaptureFailed(started, new CapturedFailure("requestBody", exception.Message, false, exception.GetType().FullName));
                 });
         }
@@ -63,17 +125,18 @@ public sealed class HttpInspectorHandler : DelegatingHandler
         try
         {
             var response = await base.SendAsync(request, cancellationToken);
-            var started = EnsureStarted();
-            if (started.IsCaptured)
+            ExchangeHandle? started;
+            lock (handleGate)
             {
-                HttpClientCaptureMapper.ObserveResponse(
-                    response,
-                    _adapter.MaximumBodyBytes,
-                    captured => _adapter.CaptureCompleted(started, captured),
-                    (captured, exception) => _adapter.CaptureFailed(
-                        started,
-                        new CapturedFailure("interceptor", exception.Message, false, exception.GetType().FullName),
-                        captured));
+                started = handle;
+            }
+            if (started is not { IsCaptured: false })
+            {
+                HttpClientCaptureMapper.ObserveResponse(response, _adapter.MaximumBodyBytes, Complete, Fail);
+                if (response.Content is null || response.Content.Headers.ContentLength == 0)
+                {
+                    EnsureStarted();
+                }
             }
             return response;
         }

@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json.Serialization;
 using HttpInspector.Adapter;
+using Refit;
 using Xunit;
 
 namespace HttpInspector.Adapter.Tests;
@@ -74,6 +76,68 @@ public sealed class HttpClientBodyCaptureTests
         Assert.Equal("multipart/mixed", capturedBody["mediaType"]!.GetValue<string>());
         Assert.Equal("inlineBase64", capturedBody["content"]!["kind"]!.GetValue<string>());
         Assert.Equal(payload, Convert.FromBase64String(capturedBody["content"]!["value"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task BRG_022_refit_streaming_batch_json_is_captured_during_the_real_transport_write()
+    {
+        var transport = new FakeCaptureTransport();
+        await using var adapter = await StartAdapterAsync(transport);
+        string? receivedBody = null;
+        var inspector = new HttpInspectorHandler(adapter)
+        {
+            InnerHandler = new DelegateHandler(async request =>
+            {
+                receivedBody = await request.Content!.ReadAsStringAsync();
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }),
+        };
+        using var httpClient = new HttpClient(inspector) { BaseAddress = new Uri("https://api.example.test") };
+        var client = RestService.For<IRefitBatchClient>(httpClient);
+        var batch = new TestBatchRequest
+        {
+            Requests = [new TestBatchRequestItem("1", "GET", "/accounts")],
+        };
+
+        await client.Batch(batch);
+        var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var capturedBody = started["request"]!["body"]!;
+
+        Assert.NotNull(receivedBody);
+        Assert.Contains("\"requests\"", receivedBody);
+        Assert.Equal("captured", capturedBody["availability"]!.GetValue<string>());
+        Assert.Equal("inlineText", capturedBody["content"]!["kind"]!.GetValue<string>());
+        Assert.Equal(receivedBody, capturedBody["content"]!["value"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task BRG_023_batch_request_body_that_finishes_after_response_headers_is_not_lost()
+    {
+        const string payload = "{\"requests\":[{\"method\":\"PATCH\",\"url\":\"/incidents(1)\",\"id\":\"1\"}]}";
+        var transport = new FakeCaptureTransport();
+        await using var adapter = await StartAdapterAsync(transport);
+        using var content = new DeferredBatchContent(Encoding.UTF8.GetBytes(payload));
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.test/api/data/v9.2/$batch")
+        {
+            Content = content,
+        };
+        using var invoker = CreatePipeline(adapter, outgoing =>
+        {
+            content.TransportWrite = outgoing.Content!.CopyToAsync(Stream.Null);
+            return Task.FromResult(JsonResponse("{\"responses\":[]}"));
+        });
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+        content.Release();
+        await content.TransportWrite!;
+        await response.Content.ReadAsStringAsync();
+        var started = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var completed = await transport.ReadMessageAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        var capturedBody = started["request"]!["body"]!;
+
+        Assert.Equal("captured", capturedBody["availability"]!.GetValue<string>());
+        Assert.Equal(payload, capturedBody["content"]!["value"]!.GetValue<string>());
+        Assert.Equal("exchange.completed", completed["type"]!.GetValue<string>());
     }
 
     [Fact]
@@ -326,6 +390,23 @@ public sealed class HttpClientBodyCaptureTests
         return output.ToArray();
     }
 
+    public interface IRefitBatchClient
+    {
+        [Post("/saas/d365/v9.2/$batch")]
+        Task<HttpResponseMessage> Batch([Body] TestBatchRequest requestBody);
+    }
+
+    public sealed class TestBatchRequest
+    {
+        [JsonPropertyName("requests")]
+        public List<TestBatchRequestItem> Requests { get; init; } = [];
+    }
+
+    public sealed record TestBatchRequestItem(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("method")] string Method,
+        [property: JsonPropertyName("url")] string Url);
+
     private sealed class DelegateHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request);
@@ -362,6 +443,34 @@ public sealed class HttpClientBodyCaptureTests
             }
 
             await stream.WriteAsync(_payload, cancellationToken);
+        }
+    }
+
+    private sealed class DeferredBatchContent : HttpContent
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly byte[] _payload;
+
+        public DeferredBatchContent(byte[] payload)
+        {
+            _payload = payload;
+            Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+        }
+
+        public Task? TransportWrite { get; set; }
+
+        public void Release() => _release.TrySetResult();
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            await _release.Task;
+            await stream.WriteAsync(_payload);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 
