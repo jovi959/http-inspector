@@ -38,6 +38,7 @@ export interface CapturePreferencesSlice {
   readonly paneLayout: WorkspacePaneLayout;
   readonly sequenceColumnOrder: readonly SequenceColumnId[];
   readonly sequenceColumnWidths: SequenceColumnWidths;
+  readonly showDataverseValueNames: boolean;
   readonly sequenceAtLiveEdge: boolean;
   readonly filterInput: string;
   readonly captureFilter: CaptureFilter;
@@ -51,6 +52,7 @@ export interface CapturePreferencesSlice {
   setPaneLayout(layout: WorkspacePaneLayout): void;
   setSequenceColumnOrder(order: readonly SequenceColumnId[]): void;
   setSequenceColumnWidths(widths: SequenceColumnWidths): void;
+  setShowDataverseValueNames(show: boolean): void;
   setSequenceAtLiveEdge(isAtLiveEdge: boolean): void;
   setFilterInput(input: string): void;
   setFocusedGroupId(id: string | null): void;

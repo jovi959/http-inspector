@@ -42,8 +42,9 @@
 .dataverse-map-controls button, .dataverse-map-toolbar button { border: 1px solid var(--border); border-radius: 5px; padding: 4px 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 11px; }
 .dataverse-map-controls button:disabled, .dataverse-map-toolbar button:disabled { cursor: not-allowed; opacity: .45; }
 .dataverse-map-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--surface-header); color: var(--muted); font-size: 11px; }
-.dataverse-record-controls, .dataverse-viewport-controls { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.dataverse-record-controls span, .dataverse-viewport-controls span { white-space: nowrap; }
+.dataverse-record-controls, .dataverse-names-controls, .dataverse-viewport-controls { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.dataverse-record-controls span, .dataverse-names-controls span, .dataverse-viewport-controls span { white-space: nowrap; }
+.dataverse-names-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .dataverse-map-canvas { width: 100%; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 16px; background: var(--surface-code); cursor: grab; touch-action: none; user-select: none; }
 .dataverse-map-canvas:active { cursor: grabbing; }
 .dataverse-map-canvas svg { display: block; min-width: max-content; max-width: none; height: auto; }

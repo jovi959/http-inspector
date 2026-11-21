@@ -1,4 +1,5 @@
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
+import type { DataverseValueNameIndex } from "@/domain/dataverse/dataverseMap";
 import type { IntegrationCapabilities, IntegrationCatalog, IntegrationOperationResult, IntegrationPreview, ProjectSelection } from "@/features/projectIntegration/model";
 
 export class UnavailableProjectIntegrationService implements ProjectIntegrationService {
@@ -12,6 +13,8 @@ export class UnavailableProjectIntegrationService implements ProjectIntegrationS
   remove(): Promise<IntegrationOperationResult> { return unavailable(); }
   recover(): Promise<IntegrationOperationResult> { return unavailable(); }
   forceRemove(): Promise<IntegrationOperationResult> { return unavailable(); }
+  valueNames(): Promise<DataverseValueNameIndex> { return unavailable(); }
+  chooseValueNameSource(): Promise<string | null> { return Promise.resolve(null); }
 }
 
 function unavailable<T>(): Promise<T> { return Promise.reject(new Error("Project integration is unavailable in fixture/static mode.")); }

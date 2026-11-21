@@ -2,10 +2,12 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { CaptureDataSource } from "@/data/ports/CaptureDataSource";
 import { getInlineText } from "@/domain/body-presentation/bodyRendererRegistry";
-import { createDataverseResponseRecords, renderDataverseClassDiagram } from "@/domain/dataverse/dataverseMap";
+import { clampDataverseMapZoom, createDataverseResponseRecords, renderDataverseClassDiagram, stepDataverseMapZoom } from "@/domain/dataverse/dataverseMap";
 import { createDataverseMapRenderSequence } from "@/domain/dataverse/dataverseMapRenderSequence";
 import type { DataverseMap } from "@/domain/dataverse/dataverseMap";
 import { useCapturedBody } from "@/features/inspector/body/useCapturedBody";
+import { DataverseValueNamesControls } from "@/features/inspector/dataverse/DataverseValueNamesControls";
+import { useDataverseValueNames } from "@/features/inspector/dataverse/dataverseValueNamesContext";
 import { decorateDataverseDiagramValues } from "@/features/inspector/dataverse/decorateDataverseDiagramValues";
 import type { ExchangeKey, HttpBody } from "@/generated/contracts";
 import { useCaptureStore } from "@/state/capture/captureStore";
@@ -28,10 +30,6 @@ interface DragState {
   readonly pan: Point;
 }
 
-const minimumZoom = .4;
-const maximumZoom = 2.5;
-const zoomStep = .15;
-
 /** Shows captured Dataverse records on their matching OData entity cards without issuing another request. */
 export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody }: DataverseMapViewerProps) {
   const theme = useCaptureStore((state) => state.theme);
@@ -48,7 +46,8 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [renderError, setRenderError] = useState<string | null>(null);
   const record = recordIndex < 0 ? null : responseRecords.records[recordIndex] ?? null;
-  const mermaidSource = useMemo(() => renderDataverseClassDiagram(map, record), [map, record]);
+  const describeValue = useDataverseValueNames()?.describe ?? null;
+  const mermaidSource = useMemo(() => renderDataverseClassDiagram(map, record, describeValue), [map, record, describeValue]);
 
   useEffect(() => {
     setRecordIndex(-1);
@@ -100,8 +99,8 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
     svg.style.transformOrigin = "0 0";
   }, [diagramRevision, pan, zoom]);
 
-  function changeZoom(amount: number) {
-    setZoom((current) => clampZoom(current + amount));
+  function changeZoom(direction: 1 | -1) {
+    setZoom((current) => stepDataverseMapZoom(current, direction));
   }
 
   function resetViewport() {
@@ -114,7 +113,7 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
     const svg = canvas?.querySelector("svg");
     const viewBox = svg?.viewBox.baseVal;
     if (!canvas || !viewBox || viewBox.width <= 0 || viewBox.height <= 0) return;
-    const nextZoom = clampZoom(Math.min((canvas.clientWidth - 32) / viewBox.width, (canvas.clientHeight - 32) / viewBox.height, 1));
+    const nextZoom = clampDataverseMapZoom(Math.min((canvas.clientWidth - 32) / viewBox.width, (canvas.clientHeight - 32) / viewBox.height, 1));
     setZoom(nextZoom);
     setPan({ x: Math.max(16, (canvas.clientWidth - viewBox.width * nextZoom) / 2), y: Math.max(16, (canvas.clientHeight - viewBox.height * nextZoom) / 2) });
   }
@@ -140,7 +139,7 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
 
   function zoomWithWheel(event: React.WheelEvent<HTMLDivElement>) {
     event.preventDefault();
-    changeZoom(event.deltaY < 0 ? zoomStep : -zoomStep);
+    changeZoom(event.deltaY < 0 ? 1 : -1);
   }
 
   const responseStatus = getResponseStatus(bodyResult.isLoading, bodyResult.error, bodyResult.isComplete, responseRecords.error, responseRecords.records.length, recordIndex);
@@ -160,10 +159,11 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
           <span>{responseRecords.records.length === 0 ? "No captured records" : recordIndex < 0 ? "Original query map" : `Record ${recordIndex + 1} of ${responseRecords.records.length}`}</span>
           <button type="button" disabled={recordIndex >= responseRecords.records.length - 1 || responseRecords.records.length === 0} onClick={() => setRecordIndex((current) => current + 1)}>Next</button>
         </div>
+        <DataverseValueNamesControls />
         <div className="dataverse-viewport-controls">
-          <button type="button" onClick={() => changeZoom(-zoomStep)}>−</button>
+          <button type="button" onClick={() => changeZoom(-1)}>−</button>
           <span>{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => changeZoom(zoomStep)}>+</button>
+          <button type="button" onClick={() => changeZoom(1)}>+</button>
           <button type="button" onClick={fitViewport}>Fit</button>
           <button type="button" onClick={resetViewport}>Reset</button>
         </div>
@@ -176,10 +176,6 @@ export function DataverseMapViewer({ dataSource, exchangeKey, map, responseBody 
       </details>
     </section>
   );
-}
-
-function clampZoom(value: number): number {
-  return Math.min(maximumZoom, Math.max(minimumZoom, value));
 }
 
 function getResponseStatus(isLoading: boolean, bodyError: string | null, isComplete: boolean, responseError: string | null, recordCount: number, recordIndex: number): string {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
+import type { DataverseValueNameIndex } from "@/domain/dataverse/dataverseMap";
 import type { IntegrationCapabilities, IntegrationCatalog, IntegrationOperationResult, IntegrationPreview, ProjectSelection } from "@/features/projectIntegration/model";
 
 export class TauriProjectIntegrationService implements ProjectIntegrationService {
@@ -16,4 +17,6 @@ export class TauriProjectIntegrationService implements ProjectIntegrationService
   remove(integrationId: string): Promise<IntegrationOperationResult> { return invoke("integration_remove", { request: { integrationId } }); }
   recover(integrationId: string): Promise<IntegrationOperationResult> { return invoke("integration_recover", { request: { integrationId } }); }
   forceRemove(integrationId: string): Promise<IntegrationOperationResult> { return invoke("integration_force_remove", { request: { integrationId } }); }
+  valueNames(refresh: boolean): Promise<DataverseValueNameIndex> { return invoke("integration_value_names", { request: { refresh } }); }
+  chooseValueNameSource(): Promise<string | null> { return invoke("integration_choose_value_name_source"); }
 }

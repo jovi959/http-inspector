@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}, sync::{Arc
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{ApplyRequest, DatabaseResultCapturePreview, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationCoverage, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationTransport, OperationResult, PackageIdentity, PreviewRequest, ProjectChoice, ProjectSelection, SelectBashRequest, SelectProjectRequest, bash::{discover_bash, run_json, select_bash, to_bash_path, to_native_path}, payload::{EMBEDDED_ADAPTER_VERSION, EMBEDDED_PACKAGE_ID, EMBEDDED_PACKAGE_VERSION, EMBEDDED_PAYLOAD_DIGEST, MaterializedPayload, garbage_collect, materialize}};
+use crate::{ApplyRequest, DatabaseResultCapturePreview, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationCoverage, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationTransport, OperationResult, PackageIdentity, PreviewRequest, ProjectChoice, ProjectSelection, SelectBashRequest, SelectProjectRequest, ValueNameIndex, ValueNameSourceRequest, ValueNamesRequest, bash::{discover_bash, run_json, select_bash, to_bash_path, to_native_path}, payload::{EMBEDDED_ADAPTER_VERSION, EMBEDDED_PACKAGE_ID, EMBEDDED_PACKAGE_VERSION, EMBEDDED_PAYLOAD_DIGEST, MaterializedPayload, garbage_collect, materialize}, value_names::{load_or_scan, set_source}};
 
 #[derive(Clone)]
 pub struct IntegrationServiceConfig {
@@ -135,6 +135,15 @@ impl IntegrationService {
         garbage_collect(&self.config.state_root, &payload.root, &referenced, catalog_valid)?;
         Ok(catalog)
     }
+
+    /// Names for GUID/integer values, from constants in the integrated repositories and the chosen folder (scanned once, then cached).
+    pub fn value_names(&self, request: ValueNamesRequest) -> Result<ValueNameIndex, IntegrationError> {
+        // Without Git Bash or an active integration the list is empty; a chosen source folder still works.
+        let roots: Vec<String> = self.list().map(|catalog| catalog.integrations.into_iter().map(|record| record.project_root).collect()).unwrap_or_default();
+        load_or_scan(&self.config.state_root, &roots, request.refresh)
+    }
+
+    pub fn set_value_name_source(&self, request: ValueNameSourceRequest) -> Result<(), IntegrationError> { set_source(&self.config.state_root, &request.path) }
 
     pub fn remove(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> { self.cleanup(request, "post-run.sh") }
     pub fn recover(&self, request: IntegrationIdRequest) -> Result<OperationResult, IntegrationError> { self.cleanup(request, "recover.sh") }

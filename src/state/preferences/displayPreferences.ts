@@ -15,6 +15,8 @@ export interface StoredDisplayPreferences {
   readonly paneLayout: WorkspacePaneLayout;
   readonly sequenceColumnOrder: readonly SequenceColumnId[];
   readonly sequenceColumnWidths: SequenceColumnWidths;
+  /** Dataverse Map: show source constant names next to GUID/integer filter values. */
+  readonly showDataverseValueNames: boolean;
 }
 
 const storageKey = "http-inspector.display-preferences.v1";
@@ -25,6 +27,7 @@ export const defaultDisplayPreferences: StoredDisplayPreferences = {
   paneLayout: { primary: 44, inspector: 56 },
   sequenceColumnOrder: defaultSequenceColumnOrder,
   sequenceColumnWidths: {},
+  showDataverseValueNames: true,
 };
 
 /** Reads display-only preferences defensively; captures are never written to browser storage. */
@@ -32,7 +35,8 @@ export function loadDisplayPreferences(): StoredDisplayPreferences {
   if (typeof window === "undefined") return defaultDisplayPreferences;
   try {
     const value: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
-    return isStoredDisplayPreferences(value) ? value : defaultDisplayPreferences;
+    // Preferences saved before showDataverseValueNames existed keep their other values and get the default.
+    return isStoredDisplayPreferences(value) ? { ...value, showDataverseValueNames: value.showDataverseValueNames ?? true } : defaultDisplayPreferences;
   } catch {
     return defaultDisplayPreferences;
   }
@@ -49,7 +53,8 @@ function isStoredDisplayPreferences(value: unknown): value is StoredDisplayPrefe
     && (candidate.workspaceView === "structure" || candidate.workspaceView === "sequence" || candidate.workspaceView === "database")
     && isPaneLayout(candidate.paneLayout)
     && isColumnOrder(candidate.sequenceColumnOrder)
-    && isColumnWidths(candidate.sequenceColumnWidths);
+    && isColumnWidths(candidate.sequenceColumnWidths)
+    && (candidate.showDataverseValueNames === undefined || typeof candidate.showDataverseValueNames === "boolean");
 }
 
 function isColumnOrder(value: unknown): value is readonly SequenceColumnId[] {

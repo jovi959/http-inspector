@@ -1,5 +1,7 @@
 import type { DataverseExpansion, DataverseFilter, DataverseMap, DataverseRecord, DataverseRecordValue } from "@/domain/dataverse/dataverseMapTypes";
 import { createDataverseRecordValuePresentation } from "@/domain/dataverse/dataverseRecordValuePresentation";
+import { formatDataverseValueLabel } from "@/domain/dataverse/dataverseValueNames";
+import type { DataverseValueDescriber } from "@/domain/dataverse/dataverseValueNames";
 
 interface ExpansionNode {
   readonly expansion: DataverseExpansion;
@@ -8,7 +10,7 @@ interface ExpansionNode {
 }
 
 /** Converts a parsed Dataverse request to Mermaid source without letting Mermaid influence parser behavior. */
-export function renderDataverseClassDiagram(map: DataverseMap, record: DataverseRecord | null = null): string {
+export function renderDataverseClassDiagram(map: DataverseMap, record: DataverseRecord | null = null, describeValue: DataverseValueDescriber | null = null): string {
   const lines = [
     "---",
     "config:",
@@ -31,7 +33,7 @@ export function renderDataverseClassDiagram(map: DataverseMap, record: Dataverse
   ];
 
   map.filters.forEach((filter, index) => {
-    lines.push("", ...renderFilter(filter, String(index + 1)));
+    lines.push("", ...renderFilter(filter, String(index + 1), describeValue));
   });
 
   const expansions = createExpansionNodes(map.expansions);
@@ -43,21 +45,23 @@ export function renderDataverseClassDiagram(map: DataverseMap, record: Dataverse
 const textMatchLabel = { contains: "CONTAINS", startsWith: "STARTS WITH", endsWith: "ENDS WITH" } as const;
 
 // id is the filter's path ("2", "3_1_2", ...); nested filters hang off their OR branch instead of ALL.
-function renderFilter(filter: DataverseFilter, id: string, parentId = "ALL", joiner = "AND"): readonly string[] {
+function renderFilter(filter: DataverseFilter, id: string, describe: DataverseValueDescriber | null, parentId = "ALL", joiner = "AND"): readonly string[] {
   const fieldId = `F${id}`;
   const valueId = `V${id}`;
+  // With a describer, value nodes also show the source constant names for that value.
+  const valueLabel = (field: string, value: string) => escapeLabel(formatDataverseValueLabel(value, describe?.(field, value) ?? []));
   if (filter.kind === "comparison") {
-    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ${parentId} --> ${fieldId} : ${joiner}`, `    ${fieldId} --> ${valueId} : ${filter.operator}`];
+    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${valueLabel(filter.field, filter.value)}"]`, `    ${parentId} --> ${fieldId} : ${joiner}`, `    ${fieldId} --> ${valueId} : ${filter.operator}`];
   }
   if (filter.kind === "anyOf") {
-    const values = filter.values.flatMap((value, valueIndex) => [`    class ${valueId}${alphabeticSuffix(valueIndex)}["${escapeLabel(value)}"]`]);
+    const values = filter.values.flatMap((value, valueIndex) => [`    class ${valueId}${alphabeticSuffix(valueIndex)}["${valueLabel(filter.field, value)}"]`]);
     const edges = filter.values.map((_, valueIndex) => `    ${fieldId} --> ${valueId}${alphabeticSuffix(valueIndex)} : OR ${filter.operator}`);
     return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, ...values, `    ${parentId} --> ${fieldId} : ${joiner}`, ...edges];
   }
   if (filter.kind === "any" || filter.kind === "notAny") {
     return [
       `    class ${fieldId}["${escapeLabel(filter.relationship)}"]`,
-      `    class ${valueId}["${escapeLabel(filter.value)}"]`,
+      `    class ${valueId}["${valueLabel(filter.field, filter.value)}"]`,
       `    ${parentId} --> ${fieldId} : ${joiner} ${filter.kind === "any" ? "ANY" : "NOT ANY"}`,
       `    ${fieldId} --> ${valueId} : ${filter.field} ${filter.operator}`,
     ];
@@ -65,24 +69,24 @@ function renderFilter(filter: DataverseFilter, id: string, parentId = "ALL", joi
   if (filter.kind === "contains" || filter.kind === "startsWith" || filter.kind === "endsWith") {
     return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ${parentId} --> ${fieldId} : ${joiner}`, `    ${fieldId} --> ${valueId} : ${textMatchLabel[filter.kind]}`];
   }
-  if (filter.kind === "or") return renderOrGroup(filter.branches, id, parentId, joiner);
+  if (filter.kind === "or") return renderOrGroup(filter.branches, id, describe, parentId, joiner);
   return [`    class ${fieldId}["${escapeLabel(filter.expression)}"]`, `    ${parentId} --> ${fieldId} : ${joiner} UNSUPPORTED`];
 }
 
 // "ONE OF" node with an OR edge per branch; a multi-condition branch gets its own "ALL" node.
-function renderOrGroup(branches: readonly (readonly DataverseFilter[])[], id: string, parentId: string, joiner: string): readonly string[] {
+function renderOrGroup(branches: readonly (readonly DataverseFilter[])[], id: string, describe: DataverseValueDescriber | null, parentId: string, joiner: string): readonly string[] {
   const groupId = `G${id}`;
   const lines = [`    class ${groupId}["ONE OF"]`, `    ${parentId} --> ${groupId} : ${joiner}`];
   branches.forEach((branch, branchIndex) => {
     const branchPath = `${id}_${branchIndex + 1}`;
     const only = branch.length === 1 ? branch[0] : undefined;
     if (only) {
-      lines.push(...renderFilter(only, branchPath, groupId, "OR"));
+      lines.push(...renderFilter(only, branchPath, describe, groupId, "OR"));
       return;
     }
     const branchId = `G${branchPath}`;
     lines.push(`    class ${branchId}["ALL"]`, `    ${groupId} --> ${branchId} : OR`);
-    branch.forEach((filter, filterIndex) => lines.push(...renderFilter(filter, `${branchPath}_${filterIndex + 1}`, branchId)));
+    branch.forEach((filter, filterIndex) => lines.push(...renderFilter(filter, `${branchPath}_${filterIndex + 1}`, describe, branchId)));
   });
   return lines;
 }

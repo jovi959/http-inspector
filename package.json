@@ -17,7 +17,7 @@
     "contracts:check": "cargo run -p inspector-core --bin generate_contracts -- --check",
     "test:model": "cargo test -p inspector-core",
     "test:replay": "cargo test -p inspector-server --test replay_application",
-    "test:dataverse": "vitest run src/domain/dataverse/dataverseMap.test.ts",
+    "test:dataverse": "vitest run src/domain/dataverse",
     "tauri": "tauri"
   },
   "dependencies": {

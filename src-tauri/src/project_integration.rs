@@ -1,4 +1,4 @@
-use inspector_project_integration::{ApplyRequest, CurrentEndpoint, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationService, IntegrationServiceConfig, IntegrationTransport, OperationResult, PreviewRequest, ProjectSelection, SelectBashRequest, SelectProjectRequest};
+use inspector_project_integration::{ApplyRequest, CurrentEndpoint, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationService, IntegrationServiceConfig, IntegrationTransport, OperationResult, PreviewRequest, ProjectSelection, SelectBashRequest, SelectProjectRequest, ValueNameIndex, ValueNameSourceRequest, ValueNamesRequest};
 use tauri::State;
 
 pub(crate) struct NativeProjectIntegration(pub IntegrationService);
@@ -65,4 +65,19 @@ pub(crate) fn integration_recover(request: IntegrationIdRequest, runtime: State<
 #[tauri::command]
 pub(crate) fn integration_force_remove(request: IntegrationIdRequest, runtime: State<'_, NativeProjectIntegration>) -> Result<OperationResult, IntegrationError> {
     runtime.0.force_remove(request)
+}
+
+// Runs off the main thread: the first scan walks the integrated repositories.
+#[tauri::command(async)]
+pub(crate) fn integration_value_names(request: ValueNamesRequest, runtime: State<'_, NativeProjectIntegration>) -> Result<ValueNameIndex, IntegrationError> {
+    runtime.0.value_names(request)
+}
+
+// Main thread (native dialog); only saves the folder, the scan runs via integration_value_names.
+#[tauri::command]
+pub(crate) fn integration_choose_value_name_source(runtime: State<'_, NativeProjectIntegration>) -> Result<Option<String>, IntegrationError> {
+    let Some(path) = rfd::FileDialog::new().set_title("Choose a source folder to scan for value names").pick_folder() else { return Ok(None); };
+    let path = path.display().to_string();
+    runtime.0.set_value_name_source(ValueNameSourceRequest { path: path.clone() })?;
+    Ok(Some(path))
 }

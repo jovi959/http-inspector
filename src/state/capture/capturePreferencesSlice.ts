@@ -14,6 +14,7 @@ export const createCapturePreferencesSlice: StateCreator<CaptureStore, [], [], C
   paneLayout: saved.paneLayout,
   sequenceColumnOrder: saved.sequenceColumnOrder,
   sequenceColumnWidths: saved.sequenceColumnWidths,
+  showDataverseValueNames: saved.showDataverseValueNames,
   sequenceAtLiveEdge: true,
   filterInput: "",
   captureFilter: { terms: [] },
@@ -27,6 +28,7 @@ export const createCapturePreferencesSlice: StateCreator<CaptureStore, [], [], C
   setPaneLayout: (paneLayout) => set((state) => saveAndReturn(state, { paneLayout })),
   setSequenceColumnOrder: (sequenceColumnOrder) => set((state) => saveAndReturn(state, { sequenceColumnOrder })),
   setSequenceColumnWidths: (sequenceColumnWidths) => set((state) => saveAndReturn(state, { sequenceColumnWidths })),
+  setShowDataverseValueNames: (showDataverseValueNames) => set((state) => saveAndReturn(state, { showDataverseValueNames })),
   setSequenceAtLiveEdge: (sequenceAtLiveEdge) => set({ sequenceAtLiveEdge }),
   setFilterInput: (filterInput) => set(() => {
     const parsed = parseCaptureFilter(filterInput);
@@ -58,6 +60,7 @@ function saveAndReturn(state: CapturePreferencesSlice, change: Partial<StoredDis
     paneLayout: change.paneLayout ?? state.paneLayout,
     sequenceColumnOrder: change.sequenceColumnOrder ?? state.sequenceColumnOrder,
     sequenceColumnWidths: change.sequenceColumnWidths ?? state.sequenceColumnWidths,
+    showDataverseValueNames: change.showDataverseValueNames ?? state.showDataverseValueNames,
   };
   saveDisplayPreferences(preferences);
   return change;

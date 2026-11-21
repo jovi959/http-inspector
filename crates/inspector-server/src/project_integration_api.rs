@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, routing::{get, post}};
-use inspector_project_integration::{ApplyRequest, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationService, IntegrationServiceConfig, IntegrationTransport, OperationResult, PreviewRequest, ProjectSelection, SelectProjectRequest};
+use inspector_project_integration::{ApplyRequest, FolderSelection, IntegrationCapabilities, IntegrationCatalog, IntegrationError, IntegrationIdRequest, IntegrationPreview, IntegrationRuntime, IntegrationService, IntegrationServiceConfig, IntegrationTransport, OperationResult, PreviewRequest, ProjectSelection, SelectProjectRequest, ValueNameIndex, ValueNamesRequest};
 
 pub(crate) fn router(state_root: std::path::PathBuf, current_endpoint: String) -> Router {
     let service = Arc::new(IntegrationService::new(IntegrationServiceConfig {
@@ -21,6 +21,7 @@ pub(crate) fn router(state_root: std::path::PathBuf, current_endpoint: String) -
         .route("/api/project-integrations/remove", post(remove))
         .route("/api/project-integrations/recover", post(recover))
         .route("/api/project-integrations/force-remove", post(force_remove))
+        .route("/api/project-integrations/value-names", post(value_names))
         .with_state(service)
 }
 
@@ -52,6 +53,10 @@ async fn recover(State(service): State<Arc<IntegrationService>>, Json(request): 
 
 async fn force_remove(State(service): State<Arc<IntegrationService>>, Json(request): Json<IntegrationIdRequest>) -> Result<Json<OperationResult>, ApiError> {
     service.force_remove(request).map(Json).map_err(ApiError)
+}
+
+async fn value_names(State(service): State<Arc<IntegrationService>>, Json(request): Json<ValueNamesRequest>) -> Result<Json<ValueNameIndex>, ApiError> {
+    service.value_names(request).map(Json).map_err(ApiError)
 }
 
 struct ApiError(IntegrationError);

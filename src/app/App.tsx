@@ -7,6 +7,7 @@ import { CaptureStatusBar } from "@/features/capture/CaptureStatusBar";
 import { CaptureToolbar } from "@/features/capture/CaptureToolbar";
 import { getExchangeStoreKey } from "@/domain/display/exchangeKey";
 import { Inspector } from "@/features/inspector/Inspector";
+import { DataverseValueNamesProvider } from "@/features/inspector/dataverse/DataverseValueNamesProvider";
 import { SequenceView } from "@/features/sequence/SequenceView";
 import { StructureView } from "@/features/structure/StructureView";
 import { DatabaseCommandInspector, DatabaseWorkspace } from "@/features/database/DatabaseWorkspace";
@@ -148,24 +149,26 @@ export function App({ dataSource, databaseDataSource, isImported = false, onImpo
 
   return (
     <AppErrorBoundary>
-      <AppShell
-        toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} importError={importError} isImported={isImported} onClearSession={handleClearSession} onImportExchange={handleImportExchange} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onReturnToLiveCapture={() => onReturnToLiveCapture?.()} onThemeChange={setTheme} />}
-        workspaceSwitch={workspaceSwitch}
-        primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : workspaceView === "sequence" ? <SequenceView onRecompose={openRecomposeMenu} /> : <DatabaseWorkspace collapsedNodeIds={collapsedDatabaseNodeIds} dataSource={databaseDataSource} onCommandSelected={setSelectedDatabaseCommand} onNodeCollapsedChange={setDatabaseNodeCollapsed} />}
-        inspector={workspaceView === "database" ? <DatabaseCommandInspector command={selectedDatabaseCommand} /> : <Inspector dataSource={dataSource} />}
-        paneLayout={paneLayout}
-        statusBar={<CaptureStatusBar status={captureStatus} listener={dataSource.listener} onRetry={() => dataSource.retryConnection()} />}
-        onPaneLayoutChange={setPaneLayout}
-      />
-      {recomposeMenu && <RecomposeContextMenu exchange={recomposeMenu.exchange} x={recomposeMenu.x} y={recomposeMenu.y} onClose={() => setRecomposeMenu(null)} onExport={(exchange) => {
-        void exportExchange(dataSource, exchange);
-        setRecomposeMenu(null);
-      }} onRecompose={(exchange) => {
-        openRecomposeDraft(createRecomposeDraft(exchange));
-        setWorkspaceView("structure");
-        setRecomposeMenu(null);
-      }} />}
-      {integrationDialogOpen && <ProjectIntegrationsDialog service={projectIntegration} endpoint={captureEndpoint} onActiveCountChange={setActiveIntegrationCount} onClose={() => setIntegrationDialogOpen(false)} />}
+      <DataverseValueNamesProvider service={projectIntegration}>
+        <AppShell
+          toolbar={<CaptureToolbar recording={recording} theme={theme} totalCount={totalCount} activeIntegrationCount={activeIntegrationCount} importError={importError} isImported={isImported} onClearSession={handleClearSession} onImportExchange={handleImportExchange} onManageIntegrations={openIntegrations} onRecordingChange={handleRecordingChange} onReturnToLiveCapture={() => onReturnToLiveCapture?.()} onThemeChange={setTheme} />}
+          workspaceSwitch={workspaceSwitch}
+          primaryView={workspaceView === "structure" ? <StructureView onRecompose={openRecomposeMenu} /> : workspaceView === "sequence" ? <SequenceView onRecompose={openRecomposeMenu} /> : <DatabaseWorkspace collapsedNodeIds={collapsedDatabaseNodeIds} dataSource={databaseDataSource} onCommandSelected={setSelectedDatabaseCommand} onNodeCollapsedChange={setDatabaseNodeCollapsed} />}
+          inspector={workspaceView === "database" ? <DatabaseCommandInspector command={selectedDatabaseCommand} /> : <Inspector dataSource={dataSource} />}
+          paneLayout={paneLayout}
+          statusBar={<CaptureStatusBar status={captureStatus} listener={dataSource.listener} onRetry={() => dataSource.retryConnection()} />}
+          onPaneLayoutChange={setPaneLayout}
+        />
+        {recomposeMenu && <RecomposeContextMenu exchange={recomposeMenu.exchange} x={recomposeMenu.x} y={recomposeMenu.y} onClose={() => setRecomposeMenu(null)} onExport={(exchange) => {
+          void exportExchange(dataSource, exchange);
+          setRecomposeMenu(null);
+        }} onRecompose={(exchange) => {
+          openRecomposeDraft(createRecomposeDraft(exchange));
+          setWorkspaceView("structure");
+          setRecomposeMenu(null);
+        }} />}
+        {integrationDialogOpen && <ProjectIntegrationsDialog service={projectIntegration} endpoint={captureEndpoint} onActiveCountChange={setActiveIntegrationCount} onClose={() => setIntegrationDialogOpen(false)} />}
+      </DataverseValueNamesProvider>
     </AppErrorBoundary>
   );
 }

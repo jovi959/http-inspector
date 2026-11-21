@@ -1,4 +1,5 @@
 import type { ProjectIntegrationService } from "@/data/ports/ProjectIntegrationService";
+import type { DataverseValueNameIndex } from "@/domain/dataverse/dataverseMap";
 import type { IntegrationCapabilities, IntegrationCatalog, IntegrationOperationResult, IntegrationPreview, ProjectSelection } from "@/features/projectIntegration/model";
 
 export class BrowserProjectIntegrationService implements ProjectIntegrationService {
@@ -14,6 +15,8 @@ export class BrowserProjectIntegrationService implements ProjectIntegrationServi
   remove(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/remove", { integrationId }); }
   recover(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/recover", { integrationId }); }
   forceRemove(integrationId: string): Promise<IntegrationOperationResult> { return request("/api/project-integrations/force-remove", { integrationId }); }
+  valueNames(refresh: boolean): Promise<DataverseValueNameIndex> { return request("/api/project-integrations/value-names", { refresh }); }
+  chooseValueNameSource(): Promise<string | null> { return Promise.resolve(null); }
 }
 
 async function request<T>(path: string, body?: unknown): Promise<T> {

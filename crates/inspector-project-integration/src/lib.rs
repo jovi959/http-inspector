@@ -1,12 +1,15 @@
 //! Shared project-integration application service used by desktop and hosted-local transports.
 
 mod bash;
+mod csharp_constants;
 mod model;
 mod payload;
 mod service;
+mod value_names;
 
 pub use model::*;
 pub use service::{CurrentEndpoint, IntegrationService, IntegrationServiceConfig};
+pub use value_names::{ValueName, ValueNameIndex, ValueNameSourceRequest, ValueNamesRequest};
 
 pub fn default_state_root() -> std::path::PathBuf {
     if cfg!(target_os = "macos") {
