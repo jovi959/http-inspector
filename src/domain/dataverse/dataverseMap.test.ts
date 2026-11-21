@@ -42,6 +42,26 @@ describe("Dataverse Map", () => {
     });
   });
 
+  test("flattens an AND group wrapped in parentheses into separate filters", () => {
+    const filter = "(field_category eq 1001 and _field_parent ne null and field_assignment eq 2001 and relation_workflow/any(p: p/_field_stage eq 22222222-3333-4444-8555-666666666666) and (_field_owner eq 33333333-4444-4555-8666-777777777777))";
+    const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
+
+    expect(map?.filters).toEqual([
+      { kind: "comparison", field: "field_category", operator: "=", value: "1001" },
+      { kind: "comparison", field: "_field_parent", operator: "!=", value: "null" },
+      { kind: "comparison", field: "field_assignment", operator: "=", value: "2001" },
+      { kind: "comparison", field: "_field_owner", operator: "=", value: "33333333-4444-4555-8666-777777777777" },
+      { kind: "any", relationship: "relation_workflow", field: "_field_stage", operator: "=", value: "22222222-3333-4444-8555-666666666666" },
+    ]);
+  });
+
+  test("reports an OR of AND groups as unsupported instead of inventing filters", () => {
+    const filter = "(field_category eq 1001 and relation_workflow/any(p: p/_field_stage eq 22222222-3333-4444-8555-666666666666)) or (field_category eq 1001 and startswith(relation_owner/field_login,'TEST_USER'))";
+    const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
+
+    expect(map?.filters).toEqual([{ kind: "unsupported", expression: filter }]);
+  });
+
   test("generates the agreed class-diagram source from the parsed request", () => {
     const map = createDataverseMap({ method: "GET", url: requestUrl });
 

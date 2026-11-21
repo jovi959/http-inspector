@@ -47,7 +47,11 @@ function parseUrl(value: string): URL | null {
 
 function parseFilters(value: string): readonly DataverseFilter[] {
   if (!value.trim()) return [];
-  return splitTopLevel(value, " and ").map(parseFilter);
+  return splitTopLevel(value, " and ").flatMap((part) => {
+    // A parenthesised AND group, e.g. "(a eq 1 and b ne null)", is the same filter list one level down.
+    const inner = removeOuterParentheses(part);
+    return inner !== part && splitTopLevel(inner, " and ").length > 1 ? parseFilters(inner) : [parseFilter(part)];
+  });
 }
 
 function parseFilter(expression: string): DataverseFilter {
@@ -74,6 +78,8 @@ function parseAny(expression: string): DataverseFilter | null {
   const alias = match[3];
   const predicate = match[4]?.trim();
   if (!relationship || !alias || !predicate || !predicate.startsWith(`${alias}/`)) return null;
+  // A relationship is a navigation path; anything else means the greedy match spanned several clauses.
+  if (!/^[A-Za-z0-9_./]+$/.test(relationship)) return null;
 
   const comparison = parseComparison(predicate.slice(alias.length + 1));
   if (!comparison) return null;
@@ -104,6 +110,8 @@ function parseAnyOf(expression: string): Extract<DataverseFilter, { readonly kin
 }
 
 function parseComparison(expression: string): Extract<DataverseFilter, { readonly kind: "comparison" }> | null {
+  // One comparison only; a value containing "and"/"or" would swallow the rest of the filter.
+  if (splitTopLevel(expression, " and ").length > 1 || splitTopLevel(expression, " or ").length > 1) return null;
   const match = /^(.+?)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$/i.exec(expression);
   const operator = match?.[2] ? comparisonOperatorByOData[match[2].toLowerCase()] : undefined;
   const field = match?.[1]?.trim();
