@@ -55,11 +55,88 @@ describe("Dataverse Map", () => {
     ]);
   });
 
-  test("reports an OR of AND groups as unsupported instead of inventing filters", () => {
+  test("parses an OR of AND groups into one-of branches", () => {
     const filter = "(field_category eq 1001 and relation_workflow/any(p: p/_field_stage eq 22222222-3333-4444-8555-666666666666)) or (field_category eq 1001 and startswith(relation_owner/field_login,'TEST_USER'))";
     const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
 
-    expect(map?.filters).toEqual([{ kind: "unsupported", expression: filter }]);
+    expect(map?.filters).toEqual([{
+      kind: "or",
+      branches: [
+        [
+          { kind: "comparison", field: "field_category", operator: "=", value: "1001" },
+          { kind: "any", relationship: "relation_workflow", field: "_field_stage", operator: "=", value: "22222222-3333-4444-8555-666666666666" },
+        ],
+        [
+          { kind: "comparison", field: "field_category", operator: "=", value: "1001" },
+          { kind: "startsWith", field: "relation_owner/field_login", value: "TEST_USER" },
+        ],
+      ],
+    }]);
+  });
+
+  test("parses startswith, endswith and a mixed OR group, and renders each branch", () => {
+    const filter = "((field_category eq 1001 and _field_parent ne null) or field_category eq 1002) and startswith(relation_owner/field_login,'TEST_USER') and endswith(field_title,'.test')";
+    const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
+
+    expect(map?.filters).toEqual([
+      { kind: "startsWith", field: "relation_owner/field_login", value: "TEST_USER" },
+      { kind: "endsWith", field: "field_title", value: ".test" },
+      {
+        kind: "or",
+        branches: [
+          [
+            { kind: "comparison", field: "field_category", operator: "=", value: "1001" },
+            { kind: "comparison", field: "_field_parent", operator: "!=", value: "null" },
+          ],
+          [{ kind: "comparison", field: "field_category", operator: "=", value: "1002" }],
+        ],
+      },
+    ]);
+    const diagram = renderDataverseClassDiagram(map!).split("\n");
+    expect(diagram).toEqual(expect.arrayContaining([
+      "    F1 --> V1 : STARTS WITH",
+      "    F2 --> V2 : ENDS WITH",
+      "    class G3[\"ONE OF\"]",
+      "    ALL --> G3 : AND",
+      "    class G3_1[\"ALL\"]",
+      "    G3 --> G3_1 : OR",
+      "    G3_1 --> F3_1_1 : AND",
+      "    F3_1_1 --> V3_1_1 : =",
+      "    G3_1 --> F3_1_2 : AND",
+      "    F3_1_2 --> V3_1_2 : !=",
+      "    G3 --> F3_2 : OR",
+      "    F3_2 --> V3_2 : =",
+    ]));
+  });
+
+  test("does not read a text function followed by OR as one function call", () => {
+    const filter = "contains(field_title,'x') or relation_workflow/any(p: p/field_status eq 0)";
+    const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
+
+    expect(map?.filters).toEqual([{
+      kind: "or",
+      branches: [
+        [{ kind: "contains", field: "field_title", value: "x" }],
+        [{ kind: "any", relationship: "relation_workflow", field: "field_status", operator: "=", value: "0" }],
+      ],
+    }]);
+  });
+
+  test("labels each filter kind by its place inside a one-of group", () => {
+    const filter = "field_category eq 1001 or relation_workflow/any(p: p/field_status eq 0) or (field_title ne null and not relation_workflow/any(p: p/_field_stage eq 22222222-3333-4444-8555-666666666666))";
+    const map = createDataverseMap({ method: "GET", url: `/saas/d365/v9.2/sample_records?$select=field_title&$filter=${filter}` });
+
+    expect(renderDataverseClassDiagram(map!).split("\n")).toEqual(expect.arrayContaining([
+      "    ALL --> G1 : AND",
+      "    G1 --> F1_1 : OR",
+      "    F1_1 --> V1_1 : =",
+      "    G1 --> F1_2 : OR ANY",
+      "    F1_2 --> V1_2 : field_status =",
+      "    G1 --> G1_3 : OR",
+      "    G1_3 --> F1_3_1 : AND",
+      "    G1_3 --> F1_3_2 : AND NOT ANY",
+      "    F1_3_2 --> V1_3_2 : _field_stage =",
+    ]));
   });
 
   test("generates the agreed class-diagram source from the parsed request", () => {

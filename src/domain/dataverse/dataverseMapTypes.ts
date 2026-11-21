@@ -6,6 +6,10 @@ export type DataverseFilter =
   | { readonly kind: "any"; readonly relationship: string; readonly field: string; readonly operator: DataverseComparisonOperator; readonly value: string }
   | { readonly kind: "notAny"; readonly relationship: string; readonly field: string; readonly operator: DataverseComparisonOperator; readonly value: string }
   | { readonly kind: "contains"; readonly field: string; readonly value: string }
+  | { readonly kind: "startsWith"; readonly field: string; readonly value: string }
+  | { readonly kind: "endsWith"; readonly field: string; readonly value: string }
+  // At least one branch must match; each branch is its own AND list.
+  | { readonly kind: "or"; readonly branches: readonly (readonly DataverseFilter[])[] }
   | { readonly kind: "unsupported"; readonly expression: string };
 
 export interface DataverseExpansion {

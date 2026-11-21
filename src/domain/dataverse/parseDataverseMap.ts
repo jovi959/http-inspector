@@ -59,14 +59,22 @@ function parseFilter(expression: string): DataverseFilter {
   const any = parseAny(normalized);
   if (any) return any;
 
-  const contains = parseContains(normalized);
-  if (contains) return contains;
+  const textMatch = parseTextMatch(normalized);
+  if (textMatch) return textMatch;
 
   const anyOf = parseAnyOf(normalized);
   if (anyOf) return anyOf;
 
+  const orGroup = parseOrGroup(normalized);
+  if (orGroup) return orGroup;
+
   const comparison = parseComparison(normalized);
   return comparison ?? { kind: "unsupported", expression: normalized };
+}
+
+function parseOrGroup(expression: string): Extract<DataverseFilter, { readonly kind: "or" }> | null {
+  const branches = splitTopLevel(expression, " or ");
+  return branches.length < 2 ? null : { kind: "or", branches: branches.map((branch) => sortFilters(parseFilters(branch))) };
 }
 
 function parseAny(expression: string): DataverseFilter | null {
@@ -92,13 +100,24 @@ function parseAny(expression: string): DataverseFilter | null {
   };
 }
 
-function parseContains(expression: string): Extract<DataverseFilter, { readonly kind: "contains" }> | null {
-  if (!expression.toLowerCase().startsWith("contains(") || !expression.endsWith(")")) return null;
-  const parts = splitTopLevel(expression.slice("contains(".length, -1), ",");
+const textMatchKindByFunction: Readonly<Record<string, "contains" | "startsWith" | "endsWith">> = {
+  contains: "contains",
+  startswith: "startsWith",
+  endswith: "endsWith",
+};
+
+function parseTextMatch(expression: string): Extract<DataverseFilter, { readonly kind: "contains" | "startsWith" | "endsWith" }> | null {
+  const name = /^(contains|startswith|endswith)\(/i.exec(expression)?.[1];
+  const kind = name ? textMatchKindByFunction[name.toLowerCase()] : undefined;
+  if (!name || !kind) return null;
+  // The call's own parentheses must wrap the rest, e.g. not "contains(a,'x') or b eq 1".
+  const call = expression.slice(name.length);
+  if (removeOuterParentheses(call) === call) return null;
+  const parts = splitTopLevel(call.slice(1, -1), ",");
   if (parts.length !== 2) return null;
   const field = parts[0]?.trim();
   const value = parts[1] ? unquote(parts[1].trim()) : "";
-  return field ? { kind: "contains", field, value } : null;
+  return field ? { kind, field, value } : null;
 }
 
 function parseAnyOf(expression: string): Extract<DataverseFilter, { readonly kind: "anyOf" }> | null {
@@ -139,7 +158,7 @@ function parseExpansion(value: string): DataverseExpansion | null {
 }
 
 function sortFilters(filters: readonly DataverseFilter[]): readonly DataverseFilter[] {
-  const rank: Readonly<Record<DataverseFilter["kind"], number>> = { comparison: 0, anyOf: 1, any: 2, notAny: 3, contains: 4, unsupported: 5 };
+  const rank: Readonly<Record<DataverseFilter["kind"], number>> = { comparison: 0, anyOf: 1, any: 2, notAny: 3, contains: 4, startsWith: 4, endsWith: 4, or: 5, unsupported: 6 };
   return filters.map((filter, index) => ({ filter, index })).sort((left, right) => rank[left.filter.kind] - rank[right.filter.kind] || left.index - right.index).map(({ filter }) => filter);
 }
 

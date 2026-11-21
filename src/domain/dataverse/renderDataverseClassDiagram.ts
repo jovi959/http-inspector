@@ -31,7 +31,7 @@ export function renderDataverseClassDiagram(map: DataverseMap, record: Dataverse
   ];
 
   map.filters.forEach((filter, index) => {
-    lines.push("", ...renderFilter(filter, index + 1));
+    lines.push("", ...renderFilter(filter, String(index + 1)));
   });
 
   const expansions = createExpansionNodes(map.expansions);
@@ -40,29 +40,51 @@ export function renderDataverseClassDiagram(map: DataverseMap, record: Dataverse
   return `${lines.join("\n")}\n`;
 }
 
-function renderFilter(filter: DataverseFilter, index: number): readonly string[] {
-  const fieldId = `F${index}`;
-  const valueId = `V${index}`;
+const textMatchLabel = { contains: "CONTAINS", startsWith: "STARTS WITH", endsWith: "ENDS WITH" } as const;
+
+// id is the filter's path ("2", "3_1_2", ...); nested filters hang off their OR branch instead of ALL.
+function renderFilter(filter: DataverseFilter, id: string, parentId = "ALL", joiner = "AND"): readonly string[] {
+  const fieldId = `F${id}`;
+  const valueId = `V${id}`;
   if (filter.kind === "comparison") {
-    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ALL --> ${fieldId} : AND`, `    ${fieldId} --> ${valueId} : ${filter.operator}`];
+    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ${parentId} --> ${fieldId} : ${joiner}`, `    ${fieldId} --> ${valueId} : ${filter.operator}`];
   }
   if (filter.kind === "anyOf") {
     const values = filter.values.flatMap((value, valueIndex) => [`    class ${valueId}${alphabeticSuffix(valueIndex)}["${escapeLabel(value)}"]`]);
     const edges = filter.values.map((_, valueIndex) => `    ${fieldId} --> ${valueId}${alphabeticSuffix(valueIndex)} : OR ${filter.operator}`);
-    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, ...values, `    ALL --> ${fieldId} : AND`, ...edges];
+    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, ...values, `    ${parentId} --> ${fieldId} : ${joiner}`, ...edges];
   }
   if (filter.kind === "any" || filter.kind === "notAny") {
     return [
       `    class ${fieldId}["${escapeLabel(filter.relationship)}"]`,
       `    class ${valueId}["${escapeLabel(filter.value)}"]`,
-      `    ALL --> ${fieldId} : ${filter.kind === "any" ? "AND ANY" : "AND NOT ANY"}`,
+      `    ${parentId} --> ${fieldId} : ${joiner} ${filter.kind === "any" ? "ANY" : "NOT ANY"}`,
       `    ${fieldId} --> ${valueId} : ${filter.field} ${filter.operator}`,
     ];
   }
-  if (filter.kind === "contains") {
-    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ALL --> ${fieldId} : AND`, `    ${fieldId} --> ${valueId} : CONTAINS`];
+  if (filter.kind === "contains" || filter.kind === "startsWith" || filter.kind === "endsWith") {
+    return [`    class ${fieldId}["${escapeLabel(filter.field)}"]`, `    class ${valueId}["${escapeLabel(filter.value)}"]`, `    ${parentId} --> ${fieldId} : ${joiner}`, `    ${fieldId} --> ${valueId} : ${textMatchLabel[filter.kind]}`];
   }
-  return [`    class ${fieldId}["${escapeLabel(filter.expression)}"]`, `    ALL --> ${fieldId} : AND UNSUPPORTED`];
+  if (filter.kind === "or") return renderOrGroup(filter.branches, id, parentId, joiner);
+  return [`    class ${fieldId}["${escapeLabel(filter.expression)}"]`, `    ${parentId} --> ${fieldId} : ${joiner} UNSUPPORTED`];
+}
+
+// "ONE OF" node with an OR edge per branch; a multi-condition branch gets its own "ALL" node.
+function renderOrGroup(branches: readonly (readonly DataverseFilter[])[], id: string, parentId: string, joiner: string): readonly string[] {
+  const groupId = `G${id}`;
+  const lines = [`    class ${groupId}["ONE OF"]`, `    ${parentId} --> ${groupId} : ${joiner}`];
+  branches.forEach((branch, branchIndex) => {
+    const branchPath = `${id}_${branchIndex + 1}`;
+    const only = branch.length === 1 ? branch[0] : undefined;
+    if (only) {
+      lines.push(...renderFilter(only, branchPath, groupId, "OR"));
+      return;
+    }
+    const branchId = `G${branchPath}`;
+    lines.push(`    class ${branchId}["ALL"]`, `    ${groupId} --> ${branchId} : OR`);
+    branch.forEach((filter, filterIndex) => lines.push(...renderFilter(filter, `${branchPath}_${filterIndex + 1}`, branchId)));
+  });
+  return lines;
 }
 
 function createExpansionNodes(expansions: readonly DataverseExpansion[]): readonly ExpansionNode[] {
